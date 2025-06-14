@@ -1,5 +1,12 @@
 # 小红书搜索工具 (XiaoHongShu Search)
 
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
+[![Flask](https://img.shields.io/badge/Flask-3.0.0-green.svg)](https://flask.palletsprojects.com/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/DerekZhou1979/xiaohongshu-search.svg)](https://github.com/DerekZhou1979/xiaohongshu-search/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/DerekZhou1979/xiaohongshu-search.svg)](https://github.com/DerekZhou1979/xiaohongshu-search/network)
+[![GitHub issues](https://img.shields.io/github/issues/DerekZhou1979/xiaohongshu-search.svg)](https://github.com/DerekZhou1979/xiaohongshu-search/issues)
+
 一个功能强大的小红书笔记搜索和访问工具，支持智能排序、双重访问方式和自动认证。
 
 ## ✨ 功能特性
@@ -31,7 +38,7 @@
 
 1. **克隆项目**
 ```bash
-git clone https://github.com/your-username/xiaohongshu-search.git
+git clone https://github.com/DerekZhou1979/xiaohongshu-search.git
 cd xiaohongshu-search
 ```
 
@@ -40,13 +47,63 @@ cd xiaohongshu-search
 pip install -r requirements.txt
 ```
 
+或者使用包管理器安装：
+```bash
+# 直接从GitHub安装
+pip install git+https://github.com/DerekZhou1979/xiaohongshu-search.git
+
+# 开发模式安装（推荐开发者使用）
+git clone https://github.com/DerekZhou1979/xiaohongshu-search.git
+cd xiaohongshu-search
+pip install -e .
+
+# 包含开发依赖
+pip install -e .[dev]
+```
+
 3. **启动服务**
 ```bash
 python app.py
+# 或者
+xiaohongshu-search  # 如果使用pip安装
 ```
 
 4. **访问应用**
 打开浏览器访问：`http://localhost:8080`
+
+### Docker部署（推荐）
+
+如果您想使用Docker进行部署：
+
+1. **使用Docker运行**
+```bash
+# 构建镜像
+docker build -t xiaohongshu-search .
+
+# 运行容器
+docker run -d -p 8080:8080 --name xiaohongshu-search xiaohongshu-search
+```
+
+2. **使用Docker Compose（推荐）**
+```bash
+# 启动所有服务
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f xiaohongshu-search
+
+# 停止服务
+docker-compose down
+```
+
+3. **从GitHub Container Registry拉取**
+```bash
+# 拉取最新镜像
+docker pull ghcr.io/derekzhou1979/xiaohongshu-search:latest
+
+# 运行
+docker run -d -p 8080:8080 ghcr.io/derekzhou1979/xiaohongshu-search:latest
+```
 
 ## 📖 使用说明
 
@@ -86,28 +143,29 @@ python app.py
 
 ```
 xiaohongshu-search/
-├── app.py                 # 主启动文件
+├── app.py                 # 主启动文件（包含所有配置）
 ├── requirements.txt       # 依赖包列表
 ├── README.md             # 项目说明
 ├── src/                  # 源代码目录
 │   ├── crawler/          # 爬虫模块
-│   └── server/           # 服务器模块
+│   ├── server/           # 服务器模块
+│   └── utils/            # 工具模块
 ├── static/               # 静态资源
 │   ├── css/             # 样式文件
 │   ├── js/              # JavaScript文件
 │   └── images/          # 图片资源
-├── config/              # 配置文件
+├── drivers/             # WebDriver驱动
 └── cache/               # 缓存目录
 ```
 
 ## ⚙️ 配置说明
 
 ### 搜索配置
-在 `config/config.py` 中可以调整：
-- 搜索结果数量
+在 `app.py` 文件开头的配置部分可以调整：
+- 搜索结果数量（SEARCH_CONFIG）
 - 缓存过期时间
 - 请求延迟设置
-- 热门关键词
+- 热门关键词（HOT_KEYWORDS）
 
 ## 🔧 API接口
 

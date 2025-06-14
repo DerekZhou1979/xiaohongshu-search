@@ -21,12 +21,21 @@ import re
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-# 导入全局配置
-from config.config import (
-    SEARCH_CONFIG, CRAWLER_CONFIG, EXTRACTION_STRATEGIES, 
-    DIRECTORIES, FILE_PATHS, URLS, ERROR_CONFIG,
-    get_config
-)
+# 导入配置信息（现在在app.py中定义）
+try:
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    from app import SEARCH_CONFIG, CRAWLER_CONFIG, DIRECTORIES, FILE_PATHS, URLS, HOT_KEYWORDS
+except ImportError:
+    # 如果无法导入，使用默认配置
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    SEARCH_CONFIG = {'DEFAULT_MAX_RESULTS': 30, 'MAX_RESULTS_LIMIT': 100, 'USE_CACHE': True, 'CACHE_EXPIRE_TIME': 3600}
+    CRAWLER_CONFIG = {'USE_SELENIUM': True, 'HEADLESS': True, 'WINDOW_SIZE': (1920, 1080), 'CHROME_OPTIONS': ['--headless']}
+    DIRECTORIES = {'CACHE_DIR': os.path.join(PROJECT_ROOT, 'cache'), 'TEMP_DIR': os.path.join(PROJECT_ROOT, 'cache', 'temp')}
+    FILE_PATHS = {'CHROMEDRIVER_PATH': os.path.join(PROJECT_ROOT, 'drivers', 'chromedriver-mac-arm64', 'chromedriver'), 'COOKIES_FILE': os.path.join(PROJECT_ROOT, 'cache', 'cookies', 'xiaohongshu_cookies.json')}
+    URLS = {'XIAOHONGSHU_BASE': 'https://www.xiaohongshu.com'}
+    HOT_KEYWORDS = ["海鸥手表", "美食", "护肤"]
 
 # 导入Selenium相关库
 from selenium import webdriver
@@ -53,11 +62,9 @@ class XiaoHongShuCrawler:
             proxy (str): 代理服务器地址
             cookies_file (str): cookie文件路径
         """
-        # 使用全局配置
-        self.config = get_config()
+        # 使用配置
         self.search_config = SEARCH_CONFIG
         self.crawler_config = CRAWLER_CONFIG
-        self.extraction_strategies = EXTRACTION_STRATEGIES
         
         # 初始化参数
         self.use_selenium = use_selenium if use_selenium is not None else self.crawler_config['USE_SELENIUM']
@@ -2108,7 +2115,7 @@ class XiaoHongShuCrawler:
     
     def get_hot_keywords(self):
         """获取热门搜索关键词"""
-        from config.config import HOT_KEYWORDS
+        # HOT_KEYWORDS已在文件开头导入
         return HOT_KEYWORDS
     
     def close(self):

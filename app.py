@@ -2,316 +2,247 @@
 # -*- coding: utf-8 -*-
 
 """
-小红书搜索工具 - 整合启动文件
-确保所有依赖服务在localhost访问前完成初始化，使用本地ChromeDriver
+小红书搜索工具 - 主启动文件
+支持智能搜索、双重访问方式和自动认证
 """
 
-import sys
 import os
-import logging
+import sys
+import subprocess
 import time
-import threading
-import shutil
-from flask import Flask
 
-# 添加项目根目录到Python路径
-sys.path.append(os.path.dirname(__file__))
+# 项目根目录
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
-# 导入全局配置
-from config.config import (
-    APP_CONFIG, SEARCH_CONFIG, CRAWLER_CONFIG, 
-    DIRECTORIES, FILE_PATHS, LOGGING_CONFIG,
-    create_directories, validate_config
-)
+# ===========================================
+# 应用配置
+# ===========================================
 
-# 创建必要的目录
-create_directories()
+APP_CONFIG = {
+    'DEBUG': False,
+    'HOST': '0.0.0.0',
+    'PORT': 8080,
+    'SECRET_KEY': 'xiaohongshu_search_2024'
+}
 
-# 配置日志 - 使用全局配置
-logging.basicConfig(
-    level=getattr(logging, LOGGING_CONFIG['LEVEL']), 
-    format=LOGGING_CONFIG['FORMAT'],
-    handlers=[
-        logging.FileHandler(FILE_PATHS['STARTUP_LOG'], encoding=LOGGING_CONFIG['ENCODING']),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+# ===========================================
+# 搜索配置
+# ===========================================
 
-def cleanup_cache():
-    """清理缓存目录中的过期文件，保留cookies目录和最新的日志文件"""
-    logger.info("正在清理缓存过期文件...")
+SEARCH_CONFIG = {
+    'DEFAULT_MAX_RESULTS': 30,
+    'MAX_RESULTS_LIMIT': 100,
+    'USE_CACHE': True,
+    'CACHE_EXPIRE_TIME': 3600,
+    'REQUEST_DELAY': 0.5,
+    'PAGE_LOAD_TIMEOUT': 30,
+    'MAX_RETRIES': 3,
+    'RETRY_DELAY': 2
+}
+
+# ===========================================
+# 爬虫配置
+# ===========================================
+
+CRAWLER_CONFIG = {
+    'USE_SELENIUM': True,
+    'HEADLESS': True,
+    'WINDOW_SIZE': (1920, 1080),
+    'CHROME_OPTIONS': [
+        '--headless',
+        '--no-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-web-security',
+        '--ignore-certificate-errors',
+        '--disable-blink-features=AutomationControlled',
+        '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    ],
+    'SCROLL_PAUSE_TIME': 2,
+    'SCROLL_COUNT': 3,
+    'ELEMENT_WAIT_TIME': 10
+}
+
+# ===========================================
+# 目录配置
+# ===========================================
+
+DIRECTORIES = {
+    'CACHE_DIR': os.path.join(PROJECT_ROOT, 'cache'),
+    'TEMP_DIR': os.path.join(PROJECT_ROOT, 'cache', 'temp'),
+    'LOGS_DIR': os.path.join(PROJECT_ROOT, 'cache', 'logs'),
+    'COOKIES_DIR': os.path.join(PROJECT_ROOT, 'cache', 'cookies'),
+    'STATIC_DIR': os.path.join(PROJECT_ROOT, 'static'),
+    'DRIVERS_DIR': os.path.join(PROJECT_ROOT, 'drivers')
+}
+
+# ===========================================
+# 文件路径配置
+# ===========================================
+
+FILE_PATHS = {
+    'CHROMEDRIVER_PATH': os.path.join(DIRECTORIES['DRIVERS_DIR'], 'chromedriver-mac-arm64', 'chromedriver'),
+    'COOKIES_FILE': os.path.join(DIRECTORIES['COOKIES_DIR'], 'xiaohongshu_cookies.json')
+}
+
+# ===========================================
+# URL配置
+# ===========================================
+
+URLS = {
+    'XIAOHONGSHU_BASE': 'https://www.xiaohongshu.com',
+    'SEARCH_URL_TEMPLATE': 'https://www.xiaohongshu.com/search_result?keyword={keyword}&source=web_search&type=comprehensive',
+    'LOGIN_URL': 'https://www.xiaohongshu.com/login'
+}
+
+# ===========================================
+# 热门关键词
+# ===========================================
+
+HOT_KEYWORDS = [
+    "海鸥手表", "上海手表", "连衣裙", "耳机", "咖啡",
+    "包包", "眼影", "防晒霜", "面膜", "香水",
+    "手表", "鞋子", "数码产品", "家居用品", "美食"
+]
+
+def create_directories():
+    """创建必要的目录"""
+    for dir_path in DIRECTORIES.values():
+        os.makedirs(dir_path, exist_ok=True)
+
+def validate_config():
+    """验证配置的有效性"""
+    errors = []
     
-    try:
-        cache_dir = DIRECTORIES['CACHE_DIR']
-        
-        if not os.path.exists(cache_dir):
-            logger.info("缓存目录不存在，无需清理")
-            return True
-        
-        # 保护的目录列表（不删除）
-        protected_dirs = ['cookies']
-        
-        # 统计清理的文件和目录数量
-        cleaned_files = 0
-        cleaned_dirs = 0
-        
-        # 遍历cache目录中的所有项目
-        for item in os.listdir(cache_dir):
-            item_path = os.path.join(cache_dir, item)
-            
-            # 跳过受保护的目录
-            if item in protected_dirs:
-                logger.info(f"保留受保护的目录: {item}")
-                continue
-            
-            # 特殊处理logs目录：只保留最新的日志文件
-            if item == 'logs' and os.path.isdir(item_path):
-                cleaned_log_files = _cleanup_logs_directory(item_path)
-                cleaned_files += cleaned_log_files
-                logger.info(f"logs目录清理完成，删除了 {cleaned_log_files} 个旧日志文件")
-                continue
-            
+    # 检查必要的目录
+    for name, path in DIRECTORIES.items():
+        if not os.path.exists(path):
             try:
-                if os.path.isfile(item_path):
-                    # 删除文件
-                    os.remove(item_path)
-                    cleaned_files += 1
-                    logger.debug(f"删除文件: {item}")
-                elif os.path.isdir(item_path):
-                    # 删除目录及其内容
-                    shutil.rmtree(item_path)
-                    cleaned_dirs += 1
-                    logger.debug(f"删除目录: {item}")
-                    
+                os.makedirs(path, exist_ok=True)
             except Exception as e:
-                logger.warning(f"删除 {item} 时出错: {str(e)}")
-                continue
-        
-        logger.info(f"✓ 缓存清理完成: 删除了 {cleaned_files} 个文件, {cleaned_dirs} 个目录")
-        
-        # 重新创建必要的目录
-        essential_dirs = ['temp', 'logs', 'results']
-        for dir_name in essential_dirs:
-            dir_path = os.path.join(cache_dir, dir_name)
-            os.makedirs(dir_path, exist_ok=True)
-        
-        logger.info("✓ 重新创建必要的缓存目录")
-        return True
-        
-    except Exception as e:
-        logger.error(f"清理缓存时出错: {str(e)}")
-        return False
-
-def _cleanup_logs_directory(logs_dir):
-    """清理logs目录，只保留最新的日志文件"""
-    try:
-        if not os.path.exists(logs_dir):
-            return 0
-        
-        # 获取所有日志文件
-        log_files = []
-        for filename in os.listdir(logs_dir):
-            file_path = os.path.join(logs_dir, filename)
-            if os.path.isfile(file_path) and filename.endswith('.log'):
-                # 获取文件的修改时间
-                mtime = os.path.getmtime(file_path)
-                log_files.append((file_path, mtime, filename))
-        
-        # 如果没有日志文件，返回
-        if not log_files:
-            return 0
-        
-        # 按修改时间排序，最新的在前
-        log_files.sort(key=lambda x: x[1], reverse=True)
-        
-        # 保留最新的日志文件，删除其他的
-        cleaned_count = 0
-        for i, (file_path, mtime, filename) in enumerate(log_files):
-            if i == 0:
-                # 保留最新的日志文件
-                logger.info(f"保留最新日志文件: {filename}")
-            else:
-                # 删除旧的日志文件
-                try:
-                    os.remove(file_path)
-                    cleaned_count += 1
-                    logger.debug(f"删除旧日志文件: {filename}")
-                except Exception as e:
-                    logger.warning(f"删除日志文件 {filename} 时出错: {str(e)}")
-        
-        return cleaned_count
-        
-    except Exception as e:
-        logger.warning(f"清理logs目录时出错: {str(e)}")
-        return 0
+                errors.append(f"无法创建目录 {name}: {path} - {str(e)}")
+    
+    # 检查ChromeDriver
+    chromedriver_path = FILE_PATHS['CHROMEDRIVER_PATH']
+    if not os.path.exists(chromedriver_path):
+        errors.append(f"ChromeDriver不存在: {chromedriver_path}")
+    
+    return errors
 
 def check_dependencies():
-    """检查和安装所有依赖"""
-    logger.info("正在检查系统依赖...")
-    
+    """检查并安装依赖"""
+    print("🔍 检查Python依赖...")
     try:
-        # 检查基础Python包
-        import selenium
-        import flask
-        import flask_cors
-        import requests
-        import bs4
-        logger.info("✓ 基础Python包检查完成")
-    except ImportError as e:
-        logger.error(f"缺少必要的Python包: {e}")
-        logger.info("正在安装缺失的依赖...")
-        os.system("python3 -m pip install -r requirements.txt")
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'], 
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("✅ 依赖检查完成")
+    except subprocess.CalledProcessError:
+        print("❌ 依赖安装失败，请手动运行: pip install -r requirements.txt")
         return False
-    
-    # 检查Chrome和chromedriver
-    try:
-        chrome_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-        if not os.path.exists(chrome_path):
-            logger.warning("未找到Chrome浏览器，请确保已安装Google Chrome")
-        else:
-            logger.info("✓ Chrome浏览器检查完成")
-    except Exception as e:
-        logger.error(f"Chrome检查失败: {e}")
-        return False
-    
     return True
 
-def initialize_webdriver():
-    """初始化WebDriver - 使用全局配置"""
-    logger.info("正在初始化WebDriver...")
+def check_chrome():
+    """检查Chrome浏览器"""
+    chrome_paths = [
+        'google-chrome',
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+    ]
     
-    try:
-        from selenium.webdriver.chrome.service import Service
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-        
-        # 配置Chrome选项 - 使用全局配置
-        chrome_options = Options()
-        for option in CRAWLER_CONFIG['CHROME_OPTIONS']:
-            chrome_options.add_argument(option)
-        
-        # 使用本地chromedriver
-        local_driver_path = FILE_PATHS['CHROMEDRIVER_PATH']
-        
-        if os.path.exists(local_driver_path):
-            logger.info(f"找到本地chromedriver: {local_driver_path}")
-            
-            # 设置文件权限
-            os.chmod(local_driver_path, 0o755)
-            
-            # 验证本地chromedriver
-            service = Service(local_driver_path)
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            driver.get("data:text/html,<html><body><h1>WebDriver Validation</h1></body></html>")
-            driver.quit()
-            
-            logger.info("✓ 本地chromedriver验证成功")
+    for path in chrome_paths:
+        if os.path.exists(path) or subprocess.run(['which', path], capture_output=True).returncode == 0:
             return True
-        else:
-            logger.error("本地chromedriver不存在")
-            logger.info("请确保drivers/chromedriver-mac-arm64/chromedriver文件存在")
-            return False
-                
-    except Exception as e:
-        logger.error(f"WebDriver初始化失败: {e}")
-        return False
-
-def initialize_crawler():
-    """预初始化爬虫组件"""
-    logger.info("正在预初始化爬虫组件...")
     
-    try:
-        from src.crawler.xiaohongshu_crawler import XiaoHongShuCrawler
-        
-        # 创建配置目录 - 使用全局配置
-        for dir_path in DIRECTORIES.values():
-            os.makedirs(dir_path, exist_ok=True)
-        
-        logger.info("✓ 爬虫组件预初始化完成")
-        return True
-        
-    except Exception as e:
-        logger.error(f"爬虫组件预初始化失败: {e}")
-        return False
+    print("⚠️  警告: 未找到Chrome浏览器，Selenium可能无法正常工作")
+    print("   请安装Chrome浏览器: https://www.google.com/chrome/")
+    return False
 
-def start_flask_app():
-    """启动Flask应用"""
-    logger.info("正在启动Flask应用...")
-    
-    try:
-        from src.server.main_server import app
-        
-        # 创建静态文件目录
-        os.makedirs(os.path.join(DIRECTORIES['STATIC_DIR'], 'css'), exist_ok=True)
-        os.makedirs(os.path.join(DIRECTORIES['STATIC_DIR'], 'js'), exist_ok=True)
-        os.makedirs(os.path.join(DIRECTORIES['STATIC_DIR'], 'images'), exist_ok=True)
-        
-        logger.info("所有服务初始化完成！")
-        logger.info("=" * 50)
-        logger.info("小红书搜索服务已就绪")
-        logger.info(f"访问地址: http://{APP_CONFIG['HOST']}:{APP_CONFIG['PORT']}")
-        logger.info(f"如需登录，请访问: http://{APP_CONFIG['HOST']}:{APP_CONFIG['PORT']}/login")
-        logger.info(f"默认搜索结果数量: {SEARCH_CONFIG['DEFAULT_MAX_RESULTS']} 篇笔记")
-        logger.info("=" * 50)
-        
-        # 启动Flask应用 - 使用全局配置
-        app.run(debug=APP_CONFIG['DEBUG'], host=APP_CONFIG['HOST'], port=APP_CONFIG['PORT'])
-        
-    except Exception as e:
-        logger.error(f"Flask应用启动失败: {e}")
-        raise
+def cleanup_temp_files():
+    """清理临时文件"""
+    temp_dir = DIRECTORIES['TEMP_DIR']
+    if os.path.exists(temp_dir):
+        temp_files = [f for f in os.listdir(temp_dir) if os.path.isfile(os.path.join(temp_dir, f))]
+        if temp_files:
+            print(f"🧹 清理 {len(temp_files)} 个临时文件...")
+            for file in temp_files:
+                try:
+                    os.remove(os.path.join(temp_dir, file))
+                except:
+                    pass
+            print("✅ 临时文件清理完成")
+
+def check_port(port):
+    """检查端口是否被占用"""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('localhost', port)) == 0
 
 def main():
-    """主启动函数"""
-    start_time = time.time()
-    logger.info("开始启动小红书搜索服务...")
+    """主函数"""
+    print("🚀 启动小红书搜索工具...")
+    print("=" * 50)
     
+    # 创建必要目录
+    create_directories()
+    
+    # 检查配置
+    errors = validate_config()
+    if errors:
+        print("❌ 配置验证失败:")
+        for error in errors:
+            print(f"   - {error}")
+        print("\n请检查配置后重试")
+        return
+    
+    # 检查依赖
+    if not check_dependencies():
+        return
+    
+    # 检查Chrome
+    check_chrome()
+    
+    # 清理临时文件
+    cleanup_temp_files()
+    
+    # 检查端口
+    port = APP_CONFIG['PORT']
+    if check_port(port):
+        print(f"⚠️  端口 {port} 已被占用，请关闭占用该端口的程序后重试")
+        return
+    
+    # 显示启动信息
+    print(f"📍 项目根目录: {PROJECT_ROOT}")
+    print(f"🌐 服务地址: http://localhost:{port}")
+    print(f"📊 默认搜索结果数: {SEARCH_CONFIG['DEFAULT_MAX_RESULTS']}")
+    print(f"💾 缓存目录: {DIRECTORIES['CACHE_DIR']}")
+    print("=" * 50)
+    
+    # 启动服务器
     try:
-        # 步骤0: 验证配置
-        config_errors = validate_config()
-        if config_errors:
-            logger.warning("配置验证发现问题:")
-            for error in config_errors:
-                logger.warning(f"  - {error}")
-        else:
-            logger.info("✓ 配置验证通过")
+        # 添加项目根目录到Python路径
+        sys.path.insert(0, PROJECT_ROOT)
         
-        # 步骤1: 清理缓存过期文件
-        if not cleanup_cache():
-            logger.warning("缓存清理失败，但继续启动...")
+        # 导入并启动主服务器
+        from src.server.main_server import app
         
-        # 步骤2: 检查依赖
-        if not check_dependencies():
-            logger.error("依赖检查失败，请手动安装所需依赖")
-            return False
+        print("🎉 服务启动成功!")
+        print(f"🔗 访问地址: http://localhost:{port}")
+        print("⏹️  按 Ctrl+C 停止服务")
+        print("=" * 50)
         
-        # 步骤3: 初始化WebDriver（使用本地chromedriver）
-        if not initialize_webdriver():
-            logger.error("WebDriver初始化失败，请检查本地chromedriver")
-            return False
-        
-        # 步骤4: 预初始化爬虫组件
-        if not initialize_crawler():
-            logger.error("爬虫组件预初始化失败")
-            return False
-        
-        # 步骤5: 启动Flask应用
-        elapsed_time = time.time() - start_time
-        logger.info(f"所有初始化步骤完成，用时: {elapsed_time:.2f}秒")
-        
-        start_flask_app()
+        # 启动Flask应用
+        app.run(
+            host=APP_CONFIG['HOST'],
+            port=APP_CONFIG['PORT'],
+            debug=APP_CONFIG['DEBUG']
+        )
         
     except KeyboardInterrupt:
-        logger.info("服务已停止")
+        print("\n👋 服务已停止")
     except Exception as e:
-        logger.error(f"启动失败: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return False
-    
-    return True
+        print(f"❌ 启动失败: {str(e)}")
+        print("请检查错误信息并重试")
 
 if __name__ == '__main__':
-    success = main()
-    sys.exit(0 if success else 1) 
+    main() 

@@ -85,6 +85,47 @@ git push -u origin main
    ```
    - 点击 "Publish release"
 
+## 📦 Python包打包
+
+### 构建发布包
+```bash
+# 安装构建工具
+pip install build twine
+
+# 构建包
+python -m build
+
+# 检查包
+twine check dist/*
+```
+
+### 发布到PyPI（可选）
+```bash
+# 测试环境发布
+twine upload --repository testpypi dist/*
+
+# 正式环境发布
+twine upload dist/*
+```
+
+### 安装方式
+用户可以通过以下方式安装：
+```bash
+# 从PyPI安装（如果已发布）
+pip install xiaohongshu-search
+
+# 从GitHub直接安装
+pip install git+https://github.com/DerekZhou1979/xiaohongshu-search.git
+
+# 开发模式安装（本地开发）
+git clone https://github.com/DerekZhou1979/xiaohongshu-search.git
+cd xiaohongshu-search
+pip install -e .
+
+# 包含开发依赖
+pip install -e .[dev]
+```
+
 ## 🔧 后续维护
 
 ### 更新代码
@@ -101,11 +142,18 @@ git push origin main
 
 ### 创建新版本
 ```bash
+# 更新版本号（在pyproject.toml和setup.py中）
 # 创建新的标签
 git tag v1.1.0
 
 # 推送标签
 git push origin v1.1.0
+
+# 构建新版本包
+python -m build
+
+# 发布新版本（如果需要）
+twine upload dist/*
 ```
 
 然后在GitHub上创建对应的Release。

@@ -1,0 +1,46 @@
+# 包含项目文档
+include README.md
+include LICENSE
+include GITHUB_SETUP.md
+include xiaohongshu_analysis.md
+include requirements.txt
+include .gitignore
+
+# 包含配置文件
+include *.toml
+include *.cfg
+include *.ini
+include *.yaml
+include *.yml
+include *.json
+
+# 包含静态资源
+recursive-include static *
+recursive-include templates *.html
+recursive-include services *.ts *.js *.json
+recursive-include cache *.txt *.json
+recursive-include drivers *.exe *.zip
+
+# 包含源代码
+recursive-include src *.py
+recursive-include src *.json
+recursive-include src *.yaml
+recursive-include src *.txt
+
+# 排除不需要的文件
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.pyd
+global-exclude __pycache__
+global-exclude .DS_Store
+global-exclude .git*
+global-exclude *.egg-info
+global-exclude build
+global-exclude dist
+global-exclude venv
+global-exclude .venv
+global-exclude .pytest_cache
+global-exclude .coverage
+global-exclude htmlcov
+global-exclude .mypy_cache
+global-exclude .tox 

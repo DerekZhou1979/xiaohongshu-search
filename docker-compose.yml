@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  xiaohongshu-search:
+    build: .
+    container_name: xiaohongshu-search-app
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FLASK_ENV=production
+      - CHROME_BIN=/usr/bin/google-chrome
+      - CHROMEDRIVER_PATH=/usr/local/bin/chromedriver
+    volumes:
+      - ./cache:/app/cache
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - xiaohongshu-network
+
+  # 可选：添加Redis缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: xiaohongshu-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    networks:
+      - xiaohongshu-network
+
+  # 可选：添加Nginx反向代理
+  nginx:
+    image: nginx:alpine
+    container_name: xiaohongshu-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - xiaohongshu-search
+    restart: unless-stopped
+    networks:
+      - xiaohongshu-network
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  xiaohongshu-network:
+    driver: bridge 
