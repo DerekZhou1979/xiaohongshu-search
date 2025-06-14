@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>豫园股份-小红书搜索工具</title>
+    <meta name="description" content="豫园股份小红书内容搜索工具，支持关键词搜索和结果展示">
+    <meta name="keywords" content="豫园股份,小红书,搜索,笔记,内容">
+    <link rel="icon" type="image/png" href="https://www.yuyuantm.com.cn/images/logo-yy.png">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 页面头部 -->
+        <header>
+            <div class="logo">
+                <img src="https://image.photoworld.com.cn/wp-content/uploads/2021/03/豫园股份-t.jpg?imageView2/2/w/720" alt="豫园股份" id="logo-img">
+                <h1>豫园股份-小红书Top20笔记搜索工具</h1>
+            </div>
+        </header>
+        
+        <!-- 主要内容区域 -->
+        <main>
+            <!-- 搜索区域 -->
+            <section class="search-section">
+                <div class="search-container">
+                    <input type="text" 
+                           id="search-input" 
+                           placeholder="输入关键词，例如：老庙黄金、海鸥表、松鹤楼、AHAVA、亚一金店..."
+                           autocomplete="off">
+                    <button id="search-button" type="button">
+                        <i class="fas fa-search"></i> 搜索
+                    </button>
+                </div>
+                
+                <!-- 豫园旗下产业品牌 -->
+                <div class="brand-showcase">
+                    <span class="brand-title">豫园旗下品牌：</span>
+                    <div class="brand-logos">
+                        <div class="brand-item" data-keyword="老庙黄金" title="老庙黄金 - 中华老字号珠宝品牌">
+                            <img src="https://www.yuyuantm.com.cn/images/brand/lm-logo.png" alt="老庙黄金" class="brand-logo">
+                            <span class="brand-name">老庙黄金</span>
+                        </div>
+                        <div class="brand-item" data-keyword="亚一金店" title="亚一金店 - 珠宝首饰">
+                            <img src="https://www.yuyuantm.com.cn/images/brand/yy-logo.png" alt="亚一金店" class="brand-logo">
+                            <span class="brand-name">亚一金店</span>
+                        </div>
+                        <div class="brand-item" data-keyword="海鸥表" title="海鸥表 - 中国制表工艺">
+                            <img src="https://www.seagullwatch.com/static/upload/image/20221031/1667210345246112.png" alt="海鸥表" class="brand-logo">
+                            <span class="brand-name">海鸥表</span>
+                        </div>
+                        <div class="brand-item" data-keyword="松鹤楼" title="松鹤楼 - 中华老字号餐饮">
+                            <img src="https://zhengxin-pub.cdn.bcebos.com/logopic/47c92970d76ec6768ddf3ddee795cc62_fullsize.jpg?x-bce-process=image/resize,m_lfit,w_200" alt="松鹤楼" class="brand-logo">
+                            <span class="brand-name">松鹤楼</span>
+                        </div>
+                        <div class="brand-item" data-keyword="AHAVA" title="AHAVA - 以色列护肤品牌">
+                            <img src="https://zhengxin-pub.cdn.bcebos.com/logopic/70edc8fcf21afda6e02e6fcad77cbe3d_fullsize.jpg?x-bce-process=image/resize,m_lfit,w_200" alt="AHAVA" class="brand-logo">
+                            <span class="brand-name">AHAVA</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 加载状态 -->
+            <section class="loading-section" id="loading-section" style="display: none;">
+                <div class="loading-spinner">
+                    <i class="fas fa-spinner fa-spin"></i>
+                </div>
+                <div class="loading-text">正在查询中，请稍候...</div>
+            </section>
+
+            <!-- 搜索结果 -->
+            <section class="result-section" id="result-section" style="display: none;">
+                <div class="result-header">
+                    <h2>"<span id="search-term"></span>" 的搜索结果</h2>
+                    <div class="result-time" id="result-time"></div>
+                </div>
+                <div class="result-grid" id="result-container">
+                    <!-- 搜索结果将通过JavaScript动态生成 -->
+                </div>
+            </section>
+
+            <!-- 空结果提示 -->
+            <section class="empty-result" id="empty-result" style="display: none;">
+                <div class="empty-icon">
+                    <i class="fas fa-search"></i>
+                </div>
+                <h2>未找到相关笔记</h2>
+                <p>请尝试其他关键词，或者检查网络连接</p>
+            </section>
+        </main>
+
+        <!-- 页面底部 -->
+        <footer>
+            <div class="footer-content">
+                <p>© 2025 豫园股份小红书搜索工具 - 仅供学习研究使用</p>
+                <p class="disclaimer">本工具不隶属于小红书官方，数据仅供参考</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 笔记详情模态框 -->
+    <div class="modal" id="note-modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close-modal" title="关闭">&times;</span>
+            <div class="modal-body" id="modal-body">
+                <!-- 笔记详情将通过JavaScript动态生成 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 引入JavaScript文件 -->
+    <script src="js/api.js"></script>
+    <script src="js/script.js"></script>
+</body>
+</html> 
