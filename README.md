@@ -31,7 +31,7 @@
 xiaohongshu-search/
 ├── app.py                      # 主程序入口，配置选择和服务启动
 ├── simple_refresh_cookies.py   # Cookie刷新工具
-├── start_servers.py           # 多服务启动脚本（包含图片代理）
+├── start_servers.py           # 服务启动脚本（简化版）
 ├── requirements.txt           # Python依赖包
 ├── MANIFEST.in               # 包管理文件
 ├── README.md                 # 项目文档
@@ -41,7 +41,7 @@ xiaohongshu-search/
 │   │   └── xiaohongshu_crawler.py  # 小红书爬虫主类
 │   └── server/               # 服务器模块
 │       ├── main_server.py    # 主服务器（API + Web界面）
-│       └── image_proxy.py    # 图片代理服务器
+│       └── debug_manager.py  # Debug信息管理器
 ├── 
 ├── static/                   # 前端静态文件
 │   ├── index.html           # 主页面

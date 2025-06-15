@@ -106,7 +106,6 @@ class XiaoHongShuCrawler:
         
         # 回调函数
         self.html_callback = None  # HTML结果回调函数
-        self.debug_callback = None  # Debug信息回调函数
         
         # 验证处理状态
         self.verification_in_progress = False
@@ -129,8 +128,8 @@ class XiaoHongShuCrawler:
     
     def _debug_log(self, message, level="INFO"):
         """发送debug信息到回调函数和日志"""
-        # 发送到回调函数
-        if self.debug_callback:
+        # 发送到回调函数（如果存在）
+        if hasattr(self, 'debug_callback') and self.debug_callback:
             try:
                 self.debug_callback(message, level)
             except Exception as e:
@@ -401,9 +400,6 @@ class XiaoHongShuCrawler:
             # 构建完整的URL，添加xsec_token和xsec_source参数
             enhanced_url = self._build_enhanced_url(url, xsec_token)
             
-            # 编码URL用于代理
-            encoded_url = urllib.parse.quote(enhanced_url, safe='')
-            
             # 直接使用原始图片URL，通过JavaScript处理加载失败
             note_html = f'''
             <div class="note-card" data-note-id="{note.get('id', '')}">
@@ -430,7 +426,6 @@ class XiaoHongShuCrawler:
                     </div>
                     <div class="note-links">
                         <a href="javascript:void(0)" onclick="directAccess('{enhanced_url}')" class="note-link direct-link">直接访问</a>
-                        <a href="/proxy/note/{encoded_url}" target="_blank" class="note-link proxy-link">代理访问</a>
                     </div>
                 </div>
             </div>
@@ -649,16 +644,6 @@ class XiaoHongShuCrawler:
             box-shadow: 0 3px 10px rgba(76, 175, 80, 0.3);
         }}
         
-        .proxy-link {{
-            background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
-        }}
-        
-        .proxy-link:hover {{
-            background: linear-gradient(45deg, #ff5252, #ff6b6b);
-            transform: translateY(-1px);
-            box-shadow: 0 3px 10px rgba(255, 107, 107, 0.3);
-        }}
-        
         .back-button {{
             position: fixed;
             top: 20px;
@@ -827,14 +812,9 @@ class XiaoHongShuCrawler:
                 const cleanUrl = originalUrl.split('!')[0];
                 console.log('图片加载失败，尝试清理URL:', cleanUrl);
                 img.src = cleanUrl;
-            }} else if (retryCount === 2) {{
-                // 第二次失败：尝试通过代理服务器
-                const proxyUrl = `http://localhost:8081/image?url=${{encodeURIComponent(originalUrl)}}`;
-                console.log('清理URL失败，尝试代理服务器:', proxyUrl);
-                img.src = proxyUrl;
             }} else {{
                 // 最终失败：显示占位符
-                console.log('所有方法都失败，显示占位符');
+                console.log('图片加载失败，显示占位符');
                 img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjVGNUY1Ii8+Cjx0ZXh0IHg9IjEwMCIgeT0iMTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudHJhbCIgZmlsbD0iIzk5OTk5OSIgZm9udC1zaXplPSIxNCIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIj7lsI/nuqLkuaZDRE48L3RleHQ+Cjwvc3ZnPg==';
                 img.onerror = null; // 防止无限循环
             }}

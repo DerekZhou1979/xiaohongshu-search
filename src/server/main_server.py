@@ -30,6 +30,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
 from flask_cors import CORS
 from src.crawler.xiaohongshu_crawler import XiaoHongShuCrawler
+from src.server.debug_manager import debug_manager
 
 # ==================== 配置和初始化 ====================
 
@@ -51,9 +52,6 @@ crawler = None
 
 # HTML结果内存缓存（避免文件路径问题）
 html_results_cache = {}
-
-# Debug信息存储
-debug_info_store = {}
 
 # ==================== 工具函数 ====================
 
@@ -101,163 +99,9 @@ def get_project_root():
     """获取项目根目录路径"""
     return os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
-def create_login_required_page(decoded_url):
-    """创建需要登录的页面"""
-    return '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>需要登录</title>
-        <style>
-            body { 
-                font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
-                text-align: center; 
-                padding: 50px; 
-                background: #f8f9fa;
-            }
-            .container { 
-                max-width: 600px; 
-                margin: 0 auto; 
-                background: white; 
-                padding: 40px; 
-                border-radius: 10px; 
-                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            }
-            .warning { color: #ff9800; font-size: 18px; margin-bottom: 20px; }
-            .info { color: #666; margin-bottom: 20px; line-height: 1.6; }
-            .url-info { 
-                background: #f5f5f5; 
-                padding: 15px; 
-                border-radius: 5px; 
-                margin: 20px 0; 
-                word-break: break-all; 
-                font-family: monospace;
-                font-size: 12px;
-            }
-            .back-btn {
-                display: inline-block;
-                background: #ff6b6b;
-                color: white;
-                padding: 10px 20px;
-                border-radius: 5px;
-                text-decoration: none;
-                margin-top: 20px;
-            }
-            .back-btn:hover { background: #ff5252; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="warning">🔐 该笔记需要登录才能访问</div>
-            <div class="info">
-                xsec_token和xsec_source参数已添加，但该笔记仍需要有效的登录状态。<br>
-                这可能是因为：<br>
-                • 笔记设置为私密或仅好友可见<br>
-                • 需要更新的登录凭证<br>
-                • 笔记已被删除或限制访问
-            </div>
-            <div class="url-info">访问URL: ''' + decoded_url + '''</div>
-            <a href="javascript:history.back()" class="back-btn">← 返回搜索结果</a>
-        </div>
-    </body>
-    </html>
-    ''', 200, {'Content-Type': 'text/html; charset=utf-8'}
 
-def fix_proxy_content(content, original_url):
-    """修复代理内容中的链接和资源引用"""
-    try:
-        import re
-        from urllib.parse import urljoin, urlparse
-        
-        # 获取基础URL
-        parsed_url = urlparse(original_url)
-        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
-        
-        # 修复相对链接
-        content = re.sub(r'href="(/[^"]*)"', rf'href="{base_url}\1"', content)
-        content = re.sub(r"href='(/[^']*)'", rf"href='{base_url}\1'", content)
-        
-        # 修复相对资源链接（CSS, JS, 图片等）
-        content = re.sub(r'src="(/[^"]*)"', rf'src="{base_url}\1"', content)
-        content = re.sub(r"src='(/[^']*)'", rf"src='{base_url}\1'", content)
-        
-        # 修复CSS中的相对链接
-        content = re.sub(r'url\((/[^)]*)\)', rf'url({base_url}\1)', content)
-        content = re.sub(r'url\("(/[^"]*)"\)', rf'url("{base_url}\1")', content)
-        content = re.sub(r"url\('(/[^']*)'\)", rf"url('{base_url}\1')", content)
-        
-        # 添加代理提示样式和安全策略
-        if '<head>' in content:
-            style_injection = '''
-            <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
-            <meta http-equiv="X-Content-Type-Options" content="nosniff">
-            <style>
-                .proxy-notice { 
-                    background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
-                    color: white; 
-                    padding: 12px; 
-                    text-align: center; 
-                    position: fixed; 
-                    top: 0; 
-                    left: 0; 
-                    right: 0; 
-                    z-index: 9999;
-                    font-size: 14px;
-                    font-weight: 500;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-                }
-                body { padding-top: 50px !important; }
-                .proxy-notice a {
-                    color: white;
-                    text-decoration: underline;
-                    margin-left: 10px;
-                }
-            </style>
-            '''
-            content = content.replace('<head>', f'<head>{style_injection}')
-        
-        # 添加代理提示
-        if '<body>' in content:
-            proxy_notice = '''
-            <div class="proxy-notice">
-                🔗 通过豫园股份代理服务访问 - 已自动处理登录认证
-                <a href="javascript:history.back()">← 返回搜索结果</a>
-            </div>
-            '''
-            content = content.replace('<body>', f'<body>{proxy_notice}')
-        
-        # 修复可能的协议问题
-        content = content.replace('http://www.xiaohongshu.com', 'https://www.xiaohongshu.com')
-        
-        return content
-        
-    except Exception as e:
-        logger.error(f"修复代理内容失败: {str(e)}")
-        return content
 
-def store_debug_info(session_id, message, level="INFO"):
-    """
-    存储debug信息
-    
-    Args:
-        session_id: 会话ID
-        message: debug消息
-        level: 日志级别
-    """
-    if session_id not in debug_info_store:
-        debug_info_store[session_id] = []
-    
-    debug_info_store[session_id].append({
-        'timestamp': time.time(),
-        'level': level,
-        'message': message,
-        'time_str': time.strftime('%H:%M:%S', time.localtime())
-    })
-    
-    # 限制每个会话最多存储100条debug信息
-    if len(debug_info_store[session_id]) > 100:
-        debug_info_store[session_id] = debug_info_store[session_id][-100:]
+
 
 # ==================== 静态文件路由 ====================
 
@@ -341,19 +185,18 @@ def search():
         use_cache = request.args.get('use_cache', 'true').lower() == 'true'
         
         # 记录开始搜索
-        store_debug_info(session_id, f"🔍 开始搜索关键词: {keyword}", "INFO")
-        store_debug_info(session_id, f"📊 最大结果数: {max_results}, 使用缓存: {use_cache}", "INFO")
+        debug_manager.store_debug_info(session_id, f"🔍 开始搜索关键词: {keyword}", "INFO")
+        debug_manager.store_debug_info(session_id, f"📊 最大结果数: {max_results}, 使用缓存: {use_cache}", "INFO")
         
         # 设置爬虫的debug回调
-        def debug_callback(message, level="INFO"):
-            store_debug_info(session_id, message, level)
+        debug_callback = debug_manager.create_debug_callback(session_id)
         
         # 如果爬虫支持debug回调，设置它
         if hasattr(crawler, 'set_debug_callback'):
             crawler.set_debug_callback(debug_callback)
         
         # 执行搜索
-        store_debug_info(session_id, "🚀 正在执行搜索...", "INFO")
+        debug_manager.store_debug_info(session_id, "🚀 正在执行搜索...", "INFO")
         search_results = crawler.search(keyword, max_results=max_results, use_cache=use_cache)
         
         # 规范化搜索结果格式
@@ -362,14 +205,14 @@ def search():
         else:
             notes = search_results if isinstance(search_results, list) else []
         
-        store_debug_info(session_id, f"✅ 搜索完成，找到 {len(notes)} 条笔记", "INFO")
+        debug_manager.store_debug_info(session_id, f"✅ 搜索完成，找到 {len(notes)} 条笔记", "INFO")
         
         # 生成HTML页面URL
         html_hash = hashlib.md5(keyword.encode()).hexdigest()
         html_url = f"/results/search_{html_hash}.html"           # 文件形式
         html_api_url = f"/api/result-html/{html_hash}"           # API形式（推荐）
         
-        store_debug_info(session_id, f"📄 生成HTML页面: {html_api_url}", "INFO")
+        debug_manager.store_debug_info(session_id, f"📄 生成HTML页面: {html_api_url}", "INFO")
         
         return jsonify({
             "keyword": keyword,
@@ -383,7 +226,7 @@ def search():
     except Exception as e:
         logger.error(f"搜索出错: {str(e)}")
         logger.error(traceback.format_exc())
-        store_debug_info(session_id, f"❌ 搜索失败: {str(e)}", "ERROR")
+        debug_manager.store_debug_info(session_id, f"❌ 搜索失败: {str(e)}", "ERROR")
         return jsonify({"error": "搜索失败", "message": str(e), "session_id": session_id}), 500
 
 @app.route('/api/note/<note_id>')
@@ -447,21 +290,7 @@ def get_debug_info(session_id):
         JSON格式的debug信息列表
     """
     since = request.args.get('since', type=float, default=0)
-    
-    if session_id not in debug_info_store:
-        return jsonify({"debug_info": []})
-    
-    debug_info = debug_info_store[session_id]
-    
-    # 如果指定了since参数，只返回该时间戳之后的信息
-    if since > 0:
-        debug_info = [info for info in debug_info if info['timestamp'] > since]
-    
-    return jsonify({
-        "session_id": session_id,
-        "debug_info": debug_info,
-        "last_timestamp": debug_info[-1]['timestamp'] if debug_info else 0
-    })
+    return jsonify(debug_manager.get_debug_info(session_id, since))
 
 # ==================== HTML结果页面路由 ====================
 
@@ -515,115 +344,7 @@ def get_result_html(html_hash):
         logger.error(f"读取HTML文件失败: {str(e)}")
         return jsonify({"error": "无法读取HTML文件"}), 500
 
-# ==================== 代理路由 ====================
 
-@app.route('/proxy/note/<path:note_url>')
-def proxy_note(note_url):
-    """
-    代理小红书笔记链接，使用cookies进行认证
-    
-    Args:
-        note_url: 小红书笔记URL（已编码）
-    """
-    try:
-        import urllib.parse
-        import requests
-        
-        # 解码URL
-        decoded_url = urllib.parse.unquote(note_url)
-        
-        # 确保URL是小红书的链接
-        if not decoded_url.startswith('https://www.xiaohongshu.com/'):
-            return jsonify({"error": "无效的链接"}), 400
-        
-        # 加载cookies
-        cookies_dict = {}
-        if os.path.exists(COOKIES_FILE):
-            try:
-                with open(COOKIES_FILE, 'r', encoding='utf-8') as f:
-                    cookies_list = json.load(f)
-                for cookie in cookies_list:
-                    cookies_dict[cookie['name']] = cookie['value']
-            except Exception as e:
-                logger.warning(f"加载cookies失败: {str(e)}")
-        
-        # 设置请求头
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Referer': 'https://www.xiaohongshu.com/',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'same-origin',
-            'Upgrade-Insecure-Requests': '1'
-        }
-        
-        # 记录访问日志
-        logger.info(f"代理访问URL: {decoded_url}")
-        
-        # 发起请求，禁用SSL验证以避免证书问题
-        response = requests.get(decoded_url, cookies=cookies_dict, headers=headers, timeout=15, verify=False)
-        
-        # 记录响应状态
-        logger.info(f"代理响应状态: {response.status_code}")
-        
-        if response.status_code == 200:
-            # 验证是否成功访问（检查是否需要登录）
-            content_preview = response.text[:1000].lower()
-            if '登录' in content_preview or 'login' in content_preview or '验证' in content_preview:
-                logger.warning(f"可能需要登录认证: {decoded_url}")
-                return create_login_required_page(decoded_url)
-            
-            logger.info(f"成功访问笔记: {decoded_url}")
-            
-            # 处理响应内容
-            content = response.text
-            
-            # 修复内容中的各种链接和资源引用
-            content = fix_proxy_content(content, decoded_url)
-            
-            # 设置正确的响应头
-            response_headers = {
-                'Content-Type': 'text/html; charset=utf-8',
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache',
-                'Expires': '0',
-                'X-Frame-Options': 'SAMEORIGIN',
-                'X-Content-Type-Options': 'nosniff',
-                'Referrer-Policy': 'strict-origin-when-cross-origin',
-                'Content-Security-Policy': "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: wss:; img-src 'self' data: blob: https: http:; media-src 'self' data: blob: https: http:; connect-src 'self' https: wss:; font-src 'self' data: https:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; upgrade-insecure-requests;"
-            }
-            
-            return content, 200, response_headers
-        else:
-            logger.warning(f"代理请求失败: {response.status_code}")
-            return '''
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <title>访问失败</title>
-                <style>
-                    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; padding: 50px; }
-                    .error { color: #ff6b6b; font-size: 18px; margin-bottom: 20px; }
-                    .retry { color: #666; }
-                </style>
-            </head>
-            <body>
-                <div class="error">⚠️ 无法访问该笔记</div>
-                <div class="retry">可能是网络问题或笔记已被删除</div>
-                <div style="margin-top: 20px;">
-                    <a href="javascript:history.back()" style="color: #ff6b6b; text-decoration: none;">← 返回搜索结果</a>
-                </div>
-            </body>
-            </html>
-            ''', 200, {'Content-Type': 'text/html; charset=utf-8'}
-            
-    except Exception as e:
-        logger.error(f"代理笔记链接失败: {str(e)}")
-        return jsonify({"error": f"代理失败: {str(e)}"}), 500
 
 # ==================== 错误处理 ====================
 
