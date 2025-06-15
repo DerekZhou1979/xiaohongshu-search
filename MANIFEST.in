@@ -17,7 +17,6 @@ include *.json
 # 包含静态资源
 recursive-include static *
 recursive-include templates *.html
-recursive-include services *.ts *.js *.json
 recursive-include cache *.txt *.json
 recursive-include drivers *.exe *.zip
 

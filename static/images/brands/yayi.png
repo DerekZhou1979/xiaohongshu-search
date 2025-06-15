@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <rect width="64" height="64" fill="#FFD700" rx="8"/>
-  <text x="32" y="18" font-family="serif" font-size="9" text-anchor="middle" fill="#8B4513">亚一</text>
-  <text x="32" y="32" font-family="serif" font-size="9" text-anchor="middle" fill="#8B4513">金店</text>
-  <circle cx="32" cy="45" r="8" fill="#8B4513" opacity="0.8"/>
-  <text x="32" y="49" font-family="serif" font-size="6" text-anchor="middle" fill="#FFD700">金</text>
-</svg> 

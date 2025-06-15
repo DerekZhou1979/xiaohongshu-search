@@ -52,6 +52,9 @@ crawler = None
 # HTML结果内存缓存（避免文件路径问题）
 html_results_cache = {}
 
+# Debug信息存储
+debug_info_store = {}
+
 # ==================== 工具函数 ====================
 
 def store_html_result(html_hash, html_content):
@@ -233,6 +236,29 @@ def fix_proxy_content(content, original_url):
         logger.error(f"修复代理内容失败: {str(e)}")
         return content
 
+def store_debug_info(session_id, message, level="INFO"):
+    """
+    存储debug信息
+    
+    Args:
+        session_id: 会话ID
+        message: debug消息
+        level: 日志级别
+    """
+    if session_id not in debug_info_store:
+        debug_info_store[session_id] = []
+    
+    debug_info_store[session_id].append({
+        'timestamp': time.time(),
+        'level': level,
+        'message': message,
+        'time_str': time.strftime('%H:%M:%S', time.localtime())
+    })
+    
+    # 限制每个会话最多存储100条debug信息
+    if len(debug_info_store[session_id]) > 100:
+        debug_info_store[session_id] = debug_info_store[session_id][-100:]
+
 # ==================== 静态文件路由 ====================
 
 @app.route('/')
@@ -293,6 +319,7 @@ def search():
         keyword: 搜索关键词（必需）
         max_results: 最大结果数量（可选，默认21）
         use_cache: 是否使用缓存（可选，默认true）
+        session_id: 会话ID（可选，用于debug信息）
     
     返回:
         JSON格式的搜索结果，包含笔记列表和HTML页面URL
@@ -303,6 +330,8 @@ def search():
         
     # 获取参数
     keyword = request.args.get('keyword', '').strip()
+    session_id = request.args.get('session_id', f"search_{int(time.time())}")
+    
     if not keyword:
         return jsonify({"error": "缺少关键词参数"}), 400
     
@@ -311,7 +340,20 @@ def search():
         max_results = int(request.args.get('max_results', 21))
         use_cache = request.args.get('use_cache', 'true').lower() == 'true'
         
+        # 记录开始搜索
+        store_debug_info(session_id, f"🔍 开始搜索关键词: {keyword}", "INFO")
+        store_debug_info(session_id, f"📊 最大结果数: {max_results}, 使用缓存: {use_cache}", "INFO")
+        
+        # 设置爬虫的debug回调
+        def debug_callback(message, level="INFO"):
+            store_debug_info(session_id, message, level)
+        
+        # 如果爬虫支持debug回调，设置它
+        if hasattr(crawler, 'set_debug_callback'):
+            crawler.set_debug_callback(debug_callback)
+        
         # 执行搜索
+        store_debug_info(session_id, "🚀 正在执行搜索...", "INFO")
         search_results = crawler.search(keyword, max_results=max_results, use_cache=use_cache)
         
         # 规范化搜索结果格式
@@ -320,13 +362,18 @@ def search():
         else:
             notes = search_results if isinstance(search_results, list) else []
         
+        store_debug_info(session_id, f"✅ 搜索完成，找到 {len(notes)} 条笔记", "INFO")
+        
         # 生成HTML页面URL
         html_hash = hashlib.md5(keyword.encode()).hexdigest()
         html_url = f"/results/search_{html_hash}.html"           # 文件形式
         html_api_url = f"/api/result-html/{html_hash}"           # API形式（推荐）
         
+        store_debug_info(session_id, f"📄 生成HTML页面: {html_api_url}", "INFO")
+        
         return jsonify({
             "keyword": keyword,
+            "session_id": session_id,
             "timestamp": int(time.time()),
             "count": len(notes),
             "notes": notes,
@@ -336,7 +383,8 @@ def search():
     except Exception as e:
         logger.error(f"搜索出错: {str(e)}")
         logger.error(traceback.format_exc())
-        return jsonify({"error": "搜索失败", "message": str(e)}), 500
+        store_debug_info(session_id, f"❌ 搜索失败: {str(e)}", "ERROR")
+        return jsonify({"error": "搜索失败", "message": str(e), "session_id": session_id}), 500
 
 @app.route('/api/note/<note_id>')
 def get_note(note_id):
@@ -385,6 +433,35 @@ def hot_keywords():
         logger.error(f"获取热门关键词出错: {str(e)}")
         logger.error(traceback.format_exc())
         return jsonify({"error": "获取热门关键词失败", "message": str(e)}), 500
+
+@app.route('/api/debug/<session_id>')
+def get_debug_info(session_id):
+    """
+    获取debug信息API
+    
+    参数:
+        session_id: 会话ID
+        since: 获取指定时间戳之后的信息（可选）
+    
+    返回:
+        JSON格式的debug信息列表
+    """
+    since = request.args.get('since', type=float, default=0)
+    
+    if session_id not in debug_info_store:
+        return jsonify({"debug_info": []})
+    
+    debug_info = debug_info_store[session_id]
+    
+    # 如果指定了since参数，只返回该时间戳之后的信息
+    if since > 0:
+        debug_info = [info for info in debug_info if info['timestamp'] > since]
+    
+    return jsonify({
+        "session_id": session_id,
+        "debug_info": debug_info,
+        "last_timestamp": debug_info[-1]['timestamp'] if debug_info else 0
+    })
 
 # ==================== HTML结果页面路由 ====================
 

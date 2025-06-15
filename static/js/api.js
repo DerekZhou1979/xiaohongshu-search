@@ -28,6 +28,7 @@ const DEFAULT_KEYWORDS = ['口红', '护肤品', '连衣裙', '耳机', '咖啡'
  * @param {Object} options - 可选参数
  * @param {number} options.max_results - 最大结果数量
  * @param {boolean} options.use_cache - 是否使用缓存
+ * @param {string} options.session_id - 会话ID（用于debug追踪）
  * @returns {Promise<Object>} 搜索结果对象
  * @throws {Error} 网络错误或API错误
  */
@@ -38,11 +39,15 @@ async function getRedBookNotes(keyword, options = {}) {
     }
     
     try {
+        // 生成会话ID（如果未提供）
+        const sessionId = options.session_id || `search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
         // 构建查询参数
         const params = new URLSearchParams({
             keyword: keyword.trim(),
             max_results: options.max_results || 21,
-            use_cache: options.use_cache !== false ? 'true' : 'false'
+            use_cache: options.use_cache !== false ? 'true' : 'false',
+            session_id: sessionId
         });
         
         // 创建请求控制器（用于超时控制）
@@ -75,6 +80,9 @@ async function getRedBookNotes(keyword, options = {}) {
         if (!data || typeof data !== 'object') {
             throw new Error('服务器返回数据格式错误');
         }
+        
+        // 确保返回的数据包含session_id
+        data.session_id = data.session_id || sessionId;
         
         return data;
         
@@ -164,6 +172,46 @@ async function getHotKeywords() {
         console.error('热门关键词API错误:', error);
         // 发生错误时返回默认关键词
         return DEFAULT_KEYWORDS;
+    }
+}
+
+/**
+ * 获取debug信息
+ * 
+ * @param {string} sessionId - 会话ID
+ * @param {number} since - 获取指定时间戳之后的信息（可选）
+ * @returns {Promise<Object>} debug信息对象
+ */
+async function getDebugInfo(sessionId, since = 0) {
+    if (!sessionId) {
+        throw new Error('会话ID不能为空');
+    }
+    
+    try {
+        const params = new URLSearchParams();
+        if (since > 0) {
+            params.append('since', since.toString());
+        }
+        
+        const url = `${API_BASE_URL}/debug/${encodeURIComponent(sessionId)}${params.toString() ? '?' + params.toString() : ''}`;
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`获取debug信息失败: HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+        
+    } catch (error) {
+        console.error('Debug信息API错误:', error);
+        throw error;
     }
 }
 

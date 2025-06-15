@@ -26,6 +26,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const modalBody = document.getElementById('modal-body');
     const closeModal = document.querySelector('.close-modal');
     
+    // Debug相关元素
+    const debugSection = document.getElementById('debug-section');
+    const debugLatest = document.getElementById('debug-latest');
+    const debugDetails = document.getElementById('debug-details');
+    const debugLog = document.getElementById('debug-log');
+    const debugToggle = document.getElementById('debug-toggle');
+    
     // ==================== 初始化设置 ====================
     
     // Logo图片加载失败时的占位图
@@ -35,6 +42,156 @@ document.addEventListener('DOMContentLoaded', function() {
             this.src = 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"%3E%3Crect width="40" height="40" fill="%23fe2c55"%3E%3C/rect%3E%3Ctext x="50%25" y="50%25" font-size="20" text-anchor="middle" alignment-baseline="middle" font-family="Arial" fill="white"%3ER%3C/text%3E%3C/svg%3E';
         };
     }
+    
+    // ==================== Debug信息管理 ====================
+    
+    let currentSessionId = null;
+    let debugInterval = null;
+    let lastDebugTimestamp = 0;
+    let allDebugInfo = [];
+    
+    /**
+     * 开始debug信息监控
+     * @param {string} sessionId - 会话ID
+     */
+    function startDebugMonitoring(sessionId) {
+        currentSessionId = sessionId;
+        lastDebugTimestamp = 0;
+        allDebugInfo = [];
+        
+        // 清空之前的debug信息
+        clearDebugInfo();
+        
+        // 开始轮询debug信息
+        debugInterval = setInterval(() => {
+            fetchDebugInfo();
+        }, 1000); // 每秒获取一次
+        
+        // 立即获取一次
+        fetchDebugInfo();
+    }
+    
+    /**
+     * 停止debug信息监控
+     */
+    function stopDebugMonitoring() {
+        if (debugInterval) {
+            clearInterval(debugInterval);
+            debugInterval = null;
+        }
+        currentSessionId = null;
+    }
+    
+    /**
+     * 获取debug信息
+     */
+    async function fetchDebugInfo() {
+        if (!currentSessionId) return;
+        
+        try {
+            const data = await getDebugInfo(currentSessionId, lastDebugTimestamp);
+            
+            if (data && data.debug_info && data.debug_info.length > 0) {
+                // 添加新的debug信息
+                allDebugInfo.push(...data.debug_info);
+                
+                // 更新显示
+                updateDebugDisplay(data.debug_info);
+                
+                // 更新时间戳
+                lastDebugTimestamp = data.last_timestamp || lastDebugTimestamp;
+            }
+        } catch (error) {
+            console.error('获取debug信息失败:', error);
+        }
+    }
+    
+    /**
+     * 更新debug信息显示
+     * @param {Array} newDebugInfo - 新的debug信息数组
+     */
+    function updateDebugDisplay(newDebugInfo) {
+        // 更新最新信息
+        if (newDebugInfo && newDebugInfo.length > 0) {
+            const latest = newDebugInfo[newDebugInfo.length - 1];
+            updateLatestDebugInfo(latest);
+        }
+        
+        // 更新详细日志
+        updateDebugLog();
+    }
+    
+    /**
+     * 更新最新debug信息
+     * @param {Object} latest - 最新的debug信息
+     */
+    function updateLatestDebugInfo(latest) {
+        if (!latest || !debugLatest) return;
+        
+        debugLatest.innerHTML = `
+            <div class="debug-item ${latest.level}">
+                <span class="debug-time">${latest.time_str}</span>
+                <span class="debug-message">${latest.message}</span>
+            </div>
+        `;
+    }
+    
+    /**
+     * 更新详细debug日志
+     */
+    function updateDebugLog() {
+        if (!debugLog) return;
+        
+        debugLog.innerHTML = '';
+        
+        // 显示最近50条debug信息
+        const recentDebugInfo = allDebugInfo.slice(-50);
+        
+        recentDebugInfo.forEach(item => {
+            const debugItem = document.createElement('div');
+            debugItem.className = `debug-item ${item.level}`;
+            debugItem.innerHTML = `
+                <span class="debug-time">${item.time_str}</span>
+                <span class="debug-message">${item.message}</span>
+            `;
+            debugLog.appendChild(debugItem);
+        });
+        
+        // 自动滚动到底部
+        debugLog.scrollTop = debugLog.scrollHeight;
+    }
+    
+    /**
+     * 清空debug信息
+     */
+    function clearDebugInfo() {
+        if (debugLatest) {
+            debugLatest.innerHTML = '<div class="debug-item INFO"><span class="debug-message">等待debug信息...</span></div>';
+        }
+        
+        if (debugLog) {
+            debugLog.innerHTML = '';
+        }
+        
+        allDebugInfo = [];
+        lastDebugTimestamp = 0;
+    }
+    
+    /**
+     * 切换debug详细信息显示
+     */
+    window.toggleDebugDetails = function() {
+        if (!debugDetails || !debugToggle) return;
+        
+        const isVisible = debugDetails.style.display !== 'none';
+        debugDetails.style.display = isVisible ? 'none' : 'block';
+        
+        // 更新按钮状态
+        const icon = debugToggle.querySelector('i');
+        if (icon) {
+            debugToggle.classList.toggle('expanded', !isVisible);
+        }
+    };
     
     // ==================== 核心搜索功能 ====================
     
@@ -52,10 +209,24 @@ document.addEventListener('DOMContentLoaded', function() {
         // 显示加载状态
         showLoadingState(keyword);
         
+        // 生成会话ID
+        const sessionId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // 开始debug监控
+        startDebugMonitoring(sessionId);
+        
         // 执行搜索并处理结果
-        getRedBookNotes(keyword)
-            .then(handleSearchSuccess)
-            .catch(handleSearchError);
+        getRedBookNotes(keyword, { session_id: sessionId })
+            .then(data => {
+                // 停止debug监控
+                stopDebugMonitoring();
+                handleSearchSuccess(data);
+            })
+            .catch(error => {
+                // 停止debug监控
+                stopDebugMonitoring();
+                handleSearchError(error);
+            });
     }
     
     /**

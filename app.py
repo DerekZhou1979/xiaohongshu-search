@@ -1,18 +1,19 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
-小红书搜索工具 - 主启动文件
-支持智能搜索、双重访问方式和自动认证
+豫园股份-小红书搜索工具主程序
 """
 
 import os
 import sys
+import argparse
 import subprocess
 import time
 
-# 项目根目录
+# 添加项目根目录到Python路径
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, PROJECT_ROOT)
 
 # ===========================================
 # 应用配置
@@ -21,8 +22,8 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 APP_CONFIG = {
     'DEBUG': False,
     'HOST': '0.0.0.0',
-    'PORT': 8080,
-    'SECRET_KEY': 'xiaohongshu_search_2024'
+    'PORT': int(os.environ.get('PORT', 8080)),  # 支持环境变量端口
+    'SECRET_KEY': os.environ.get('SECRET_KEY', 'xiaohongshu_search_2024')
 }
 
 # ===========================================
@@ -105,6 +106,176 @@ HOT_KEYWORDS = [
     "手表", "鞋子", "数码产品", "家居用品", "美食"
 ]
 
+# ===========================================
+# 全局爬虫配置（从config.py整合过来）
+# ===========================================
+
+CRAWL_CONFIG = {
+    'enable_debug_screenshots': False,
+    'enable_strategy_1': True,
+    'enable_strategy_2': True,
+    'enable_strategy_3': True,
+    'validation_strict_level': 'medium',
+    'enable_detailed_logs': True,
+    'screenshot_interval': 0,
+}
+
+def get_crawl_config():
+    """获取爬虫配置"""
+    import os
+    import json
+    
+    # 从环境变量读取配置
+    config_str = os.environ.get('CRAWL_CONFIG')
+    if config_str:
+        try:
+            return json.loads(config_str)
+        except:
+            pass
+    
+    return CRAWL_CONFIG
+
+def show_config_menu():
+    """显示配置选择菜单"""
+    print("🚀 启动小红书搜索工具...")
+    print("=" * 50)
+    print("📋 请选择运行模式：")
+    print("")
+    print("1️⃣  标准模式（推荐）")
+    print("   - 启用所有策略")
+    print("   - 关闭调试截图")
+    print("   - 适中的验证严格度")
+    print("")
+    print("2️⃣  调试模式")
+    print("   - 启用所有策略")
+    print("   - 开启详细截图")
+    print("   - 保存所有调试信息")
+    print("")
+    print("3️⃣  快速模式")
+    print("   - 仅启用策略1（最快）")
+    print("   - 关闭截图和详细日志")
+    print("   - 降低验证严格度")
+    print("")
+    print("4️⃣  兼容模式")
+    print("   - 启用所有策略")
+    print("   - 关闭截图")
+    print("   - 最低验证严格度")
+    print("")
+    print("5️⃣  自定义模式")
+    print("   - 手动配置各项功能")
+    print("")
+    print("=" * 50)
+    
+    while True:
+        try:
+            choice = input("请输入选择（1-5）: ").strip()
+            if choice in ['1', '2', '3', '4', '5']:
+                return int(choice)
+            else:
+                print("❌ 请输入有效的数字（1-5）")
+        except KeyboardInterrupt:
+            print("\n👋 用户取消，退出程序")
+            sys.exit(0)
+        except Exception:
+            print("❌ 输入无效，请重试")
+
+def get_config_by_mode(mode):
+    """根据模式返回配置"""
+    configs = {
+        1: {  # 标准模式
+            'name': '标准模式',
+            'enable_debug_screenshots': False,
+            'enable_strategy_1': True,
+            'enable_strategy_2': True, 
+            'enable_strategy_3': True,
+            'validation_strict_level': 'medium',
+            'enable_detailed_logs': True,
+            'screenshot_interval': 0,  # 不截图
+        },
+        2: {  # 调试模式
+            'name': '调试模式',
+            'enable_debug_screenshots': True,
+            'enable_strategy_1': True,
+            'enable_strategy_2': True,
+            'enable_strategy_3': True,
+            'validation_strict_level': 'medium',
+            'enable_detailed_logs': True,
+            'screenshot_interval': 1,  # 每1秒截图
+        },
+        3: {  # 快速模式
+            'name': '快速模式',
+            'enable_debug_screenshots': False,
+            'enable_strategy_1': True,
+            'enable_strategy_2': False,
+            'enable_strategy_3': False,
+            'validation_strict_level': 'low',
+            'enable_detailed_logs': False,
+            'screenshot_interval': 0,
+        },
+        4: {  # 兼容模式
+            'name': '兼容模式',
+            'enable_debug_screenshots': False,
+            'enable_strategy_1': True,
+            'enable_strategy_2': True,
+            'enable_strategy_3': True,
+            'validation_strict_level': 'low',
+            'enable_detailed_logs': True,
+            'screenshot_interval': 0,
+        },
+        5: {  # 自定义模式
+            'name': '自定义模式',
+            'enable_debug_screenshots': None,  # 需要用户选择
+            'enable_strategy_1': None,
+            'enable_strategy_2': None,
+            'enable_strategy_3': None,
+            'validation_strict_level': None,
+            'enable_detailed_logs': None,
+            'screenshot_interval': None,
+        }
+    }
+    return configs.get(mode, configs[1])
+
+def get_custom_config():
+    """获取自定义配置"""
+    config = {
+        'name': '自定义模式',
+        'enable_debug_screenshots': False,
+        'enable_strategy_1': True,
+        'enable_strategy_2': True,
+        'enable_strategy_3': True,
+        'validation_strict_level': 'medium',
+        'enable_detailed_logs': True,
+        'screenshot_interval': 0,
+    }
+    
+    print("\n🔧 自定义配置：")
+    
+    # 策略选择
+    print("\n📋 提取策略选择：")
+    config['enable_strategy_1'] = input("启用策略1（探索链接提取）？[Y/n]: ").lower() != 'n'
+    config['enable_strategy_2'] = input("启用策略2（数据属性提取）？[Y/n]: ").lower() != 'n' 
+    config['enable_strategy_3'] = input("启用策略3（JavaScript提取）？[Y/n]: ").lower() != 'n'
+    
+    # 验证严格度
+    print("\n🔍 验证严格度选择：")
+    print("1. 低（接受大部分结果）")
+    print("2. 中等（平衡准确性和数量）")
+    print("3. 高（严格验证）")
+    strict_choice = input("选择严格度 [1-3，默认2]: ").strip()
+    strict_map = {'1': 'low', '2': 'medium', '3': 'high'}
+    config['validation_strict_level'] = strict_map.get(strict_choice, 'medium')
+    
+    # 调试功能
+    print("\n🔧 调试功能：")
+    config['enable_debug_screenshots'] = input("启用调试截图？[y/N]: ").lower() == 'y'
+    if config['enable_debug_screenshots']:
+        interval = input("截图间隔（秒，默认5）: ").strip()
+        config['screenshot_interval'] = int(interval) if interval.isdigit() else 5
+    
+    config['enable_detailed_logs'] = input("启用详细日志？[Y/n]: ").lower() != 'n'
+    
+    return config
+
 def create_directories():
     """创建必要的目录"""
     for dir_path in DIRECTORIES.values():
@@ -171,6 +342,8 @@ def cleanup_temp_files():
                 except:
                     pass
             print("✅ 临时文件清理完成")
+            return len(temp_files)
+    return 0
 
 def check_port(port):
     """检查端口是否被占用"""
@@ -180,69 +353,52 @@ def check_port(port):
 
 def main():
     """主函数"""
-    print("🚀 启动小红书搜索工具...")
-    print("=" * 50)
-    
-    # 创建必要目录
-    create_directories()
-    
-    # 检查配置
-    errors = validate_config()
-    if errors:
-        print("❌ 配置验证失败:")
-        for error in errors:
-            print(f"   - {error}")
-        print("\n请检查配置后重试")
-        return
-    
-    # 检查依赖
-    if not check_dependencies():
-        return
-    
-    # 检查Chrome
-    check_chrome()
-    
-    # 清理临时文件
-    cleanup_temp_files()
-    
-    # 检查端口
-    port = APP_CONFIG['PORT']
-    if check_port(port):
-        print(f"⚠️  端口 {port} 已被占用，请关闭占用该端口的程序后重试")
-        return
-    
-    # 显示启动信息
-    print(f"📍 项目根目录: {PROJECT_ROOT}")
-    print(f"🌐 服务地址: http://localhost:{port}")
-    print(f"📊 默认搜索结果数: {SEARCH_CONFIG['DEFAULT_MAX_RESULTS']}")
-    print(f"💾 缓存目录: {DIRECTORIES['CACHE_DIR']}")
-    print("=" * 50)
-    
-    # 启动服务器
     try:
-        # 添加项目根目录到Python路径
-        sys.path.insert(0, PROJECT_ROOT)
+        # 显示配置菜单
+        mode = show_config_menu()
+        config = get_config_by_mode(mode)
         
-        # 导入并启动主服务器
-        from src.server.main_server import app
+        if mode == 5:  # 自定义模式
+            config = get_custom_config()
         
-        print("🎉 服务启动成功!")
-        print(f"🔗 访问地址: http://localhost:{port}")
-        print("⏹️  按 Ctrl+C 停止服务")
+        print(f"\n✅ 已选择：{config['name']}")
         print("=" * 50)
         
-        # 启动Flask应用
-        app.run(
-            host=APP_CONFIG['HOST'],
-            port=APP_CONFIG['PORT'],
-            debug=APP_CONFIG['DEBUG']
-        )
+        # 环境设置
+        import json
+        os.environ['CRAWL_CONFIG'] = json.dumps(config)  # 将配置传递给爬虫
+        
+        print("🔍 检查Python依赖...")
+        check_dependencies()
+        print("✅ 依赖检查完成")
+        
+        print("🧹 清理临时文件...")
+        cleanup_count = cleanup_temp_files()
+        print(f"✅ 临时文件清理完成 - 清理 {cleanup_count} 个文件")
+        
+        print("📁 创建目录...")
+        create_directories()
+        print("✅ 目录创建完成")
+        
+        # 显示启动信息
+        print(f"📍 项目根目录: {PROJECT_ROOT}")
+        print(f"🌐 服务地址: http://localhost:{APP_CONFIG['PORT']}")
+        print(f"📊 配置模式: {config['name']}")
+        print(f"💾 缓存目录: {os.path.join(PROJECT_ROOT, 'cache')}")
+        print("=" * 50)
+        
+        # 启动服务器
+        os.environ["FLASK_APP"] = "src.server.main_server"
+        subprocess.run([
+            sys.executable, "-m", "flask", "run", 
+            "--host=0.0.0.0", f"--port={APP_CONFIG['PORT']}"
+        ])
         
     except KeyboardInterrupt:
-        print("\n👋 服务已停止")
+        print("\n👋 用户中断，正在退出...")
     except Exception as e:
-        print(f"❌ 启动失败: {str(e)}")
-        print("请检查错误信息并重试")
+        print(f"❌ 启动失败: {e}")
+        sys.exit(1)
 
 if __name__ == '__main__':
     main() 
