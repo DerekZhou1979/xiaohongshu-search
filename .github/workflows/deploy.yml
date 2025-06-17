@@ -1,27 +1,125 @@
-name: Deploy to Railway
+name: 🚀 Deploy Xiaohongshu Search Tool
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
+    name: 🧪 Test Application
     
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Use Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
-        
-    - name: Install Railway CLI
-      run: npm install -g @railway/cli
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
       
-    - name: Deploy to Railway
-      run: railway deploy --service ${{ secrets.RAILWAY_SERVICE_ID }}
-      env:
-        RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }} 
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: 🔍 Run basic tests
+      run: |
+        python -c "import flask, selenium, requests, bs4; print('✅ All dependencies imported successfully')"
+        python -c "from src.crawler.XHS_crawler import XiaoHongShuCrawler; print('✅ Main crawler module imported successfully')"
+        python -c "from src.server.main_server import app; print('✅ Flask app imported successfully')"
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    name: 🐳 Build Docker Image
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: 🔑 Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+      if: github.event_name != 'pull_request'
+      
+    - name: 🏗️ Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: |
+          ${{ secrets.DOCKER_USERNAME }}/xiaohongshu-search:latest
+          ${{ secrets.DOCKER_USERNAME }}/xiaohongshu-search:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy-docs:
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    name: 📚 Deploy Documentation
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: 📦 Install dependencies
+      run: |
+        pip install mkdocs mkdocs-material
+        
+    - name: 📄 Generate documentation
+      run: |
+        # 创建文档目录
+        mkdir -p docs
+        
+        # 生成API文档
+        echo "# 小红书搜索工具 API 文档" > docs/api.md
+        echo "" >> docs/api.md
+        echo "## 搜索接口" >> docs/api.md
+        echo "\`\`\`" >> docs/api.md
+        echo "GET /api/search?keyword={keyword}&max_results={max_results}" >> docs/api.md
+        echo "\`\`\`" >> docs/api.md
+        
+        # 生成README为主页
+        cp README.md docs/index.md
+        
+    - name: 🚀 Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs
+        
+  notify:
+    needs: [test, build, deploy-docs]
+    runs-on: ubuntu-latest
+    name: 📢 Deployment Notification
+    if: always()
+    
+    steps:
+    - name: ✅ Success notification  
+      if: ${{ needs.test.result == 'success' && needs.build.result == 'success' }}
+      run: |
+        echo "🎉 Deployment successful!"
+        echo "📦 Docker image: docker pull ${{ secrets.DOCKER_USERNAME }}/xiaohongshu-search:latest"
+        echo "📚 Documentation: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+        
+    - name: ❌ Failure notification
+      if: ${{ needs.test.result == 'failure' || needs.build.result == 'failure' }}
+      run: |
+        echo "💥 Deployment failed!"
+        echo "Please check the logs above for details." 
