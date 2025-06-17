@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小红书笔记详情</title>
+    <link rel="stylesheet" href="css/note_detail.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 头部导航 -->
+        <header class="header">
+            <div class="nav-wrapper">
+                <button class="back-btn" onclick="history.back()">
+                    <i class="fas fa-arrow-left"></i>
+                    返回
+                </button>
+                <h1 class="page-title">笔记详情</h1>
+                <div class="nav-actions">
+                    <button class="btn-share" title="分享">
+                        <i class="fas fa-share-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主要内容区域 -->
+        <main class="main-content">
+            <!-- 加载状态 -->
+            <div id="loading" class="loading-container">
+                <div class="loading-spinner">
+                    <i class="fas fa-spinner fa-spin"></i>
+                </div>
+                <p>正在加载笔记内容...</p>
+            </div>
+
+            <!-- 错误状态 -->
+            <div id="error" class="error-container" style="display: none;">
+                <div class="error-icon">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <h3>加载失败</h3>
+                <p id="error-message">无法加载笔记内容，请稍后重试</p>
+                <button class="btn-retry" onclick="loadNoteDetail()">重新加载</button>
+            </div>
+
+            <!-- 笔记内容 -->
+            <div id="note-content" class="note-container" style="display: none;">
+                <!-- 笔记标题 -->
+                <div class="note-header">
+                    <h2 id="note-title" class="note-title">加载中...</h2>
+                    <div class="note-meta">
+                        <span id="note-id" class="note-id"></span>
+                        <span id="extraction-time" class="extraction-time"></span>
+                    </div>
+                </div>
+
+                <!-- 作者信息 -->
+                <div class="author-info">
+                    <div class="author-avatar">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <div class="author-details">
+                        <h4 id="author-name" class="author-name">作者名称</h4>
+                        <p class="author-meta">
+                            <span id="user-id" class="user-id"></span>
+                        </p>
+                    </div>
+                    <button class="btn-follow">
+                        <i class="fas fa-plus"></i>
+                        关注
+                    </button>
+                </div>
+
+                <!-- 笔记内容 -->
+                <div class="note-body">
+                    <div id="note-text" class="note-text">
+                        笔记内容加载中...
+                    </div>
+
+                    <!-- 标签 -->
+                    <div id="note-tags" class="note-tags">
+                        <!-- 标签将通过JavaScript动态加载 -->
+                    </div>
+
+                    <!-- 图片展示 -->
+                    <div id="note-images" class="note-images">
+                        <!-- 图片将通过JavaScript动态加载 -->
+                    </div>
+                </div>
+
+                <!-- 互动数据 -->
+                <div class="interaction-bar">
+                    <div class="interaction-stats">
+                        <div class="stat-item">
+                            <i class="fas fa-heart"></i>
+                            <span id="like-count">0</span>
+                            <span>点赞</span>
+                        </div>
+                        <div class="stat-item">
+                            <i class="fas fa-bookmark"></i>
+                            <span id="collect-count">0</span>
+                            <span>收藏</span>
+                        </div>
+                        <div class="stat-item">
+                            <i class="fas fa-comment"></i>
+                            <span id="comment-count">0</span>
+                            <span>评论</span>
+                        </div>
+                    </div>
+                    
+                    <div class="interaction-actions">
+                        <button class="action-btn like-btn">
+                            <i class="far fa-heart"></i>
+                            点赞
+                        </button>
+                        <button class="action-btn collect-btn">
+                            <i class="far fa-bookmark"></i>
+                            收藏
+                        </button>
+                        <button class="action-btn comment-btn">
+                            <i class="far fa-comment"></i>
+                            评论
+                        </button>
+                        <button class="action-btn share-btn">
+                            <i class="fas fa-share"></i>
+                            分享
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 提取信息 -->
+                <div class="extraction-info">
+                    <h4>
+                        <i class="fas fa-info-circle"></i>
+                        提取信息
+                    </h4>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <label>提取时间：</label>
+                            <span id="extracted-at">-</span>
+                        </div>
+                        <div class="info-item">
+                            <label>提取器版本：</label>
+                            <span id="extractor-version">-</span>
+                        </div>
+                        <div class="info-item">
+                            <label>字段数量：</label>
+                            <span id="fields-count">-</span>
+                        </div>
+                        <div class="info-item">
+                            <label>源文件：</label>
+                            <span id="source-file">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 原始数据 -->
+                <div class="raw-data-section">
+                    <div class="section-header" onclick="toggleRawData()">
+                        <h4>
+                            <i class="fas fa-code"></i>
+                            原始数据
+                        </h4>
+                        <button class="toggle-btn">
+                            <i class="fas fa-chevron-down"></i>
+                        </button>
+                    </div>
+                    <div id="raw-data" class="raw-data-content" style="display: none;">
+                        <pre id="raw-json">加载中...</pre>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 图片预览模态框 -->
+        <div id="image-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="close" onclick="closeImageModal()">&times;</span>
+                <img id="modal-image" src="" alt="图片预览">
+                <div class="modal-nav">
+                    <button id="prev-image" class="nav-btn">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <button id="next-image" class="nav-btn">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+                <div class="image-counter">
+                    <span id="current-image">1</span> / <span id="total-images">1</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/note_detail.js"></script>
+</body>
+</html> 

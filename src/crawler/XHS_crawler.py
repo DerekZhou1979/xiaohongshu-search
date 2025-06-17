@@ -426,6 +426,7 @@ class XiaoHongShuCrawler:
                     </div>
                     <div class="note-links">
                         <a href="javascript:void(0)" onclick="directAccess('{enhanced_url}')" class="note-link direct-link">直接访问</a>
+                        <a href="javascript:void(0)" onclick="createSimilarNote('{note.get("id", "")}')" class="note-link create-link">新增同类笔记</a>
                     </div>
                 </div>
             </div>
@@ -644,6 +645,16 @@ class XiaoHongShuCrawler:
             box-shadow: 0 3px 10px rgba(76, 175, 80, 0.3);
         }}
         
+        .create-link {{
+            background: linear-gradient(45deg, #FF9800, #F57C00);
+        }}
+        
+        .create-link:hover {{
+            background: linear-gradient(45deg, #F57C00, #E65100);
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(255, 152, 0, 0.3);
+        }}
+        
         .back-button {{
             position: fixed;
             top: 20px;
@@ -753,6 +764,42 @@ class XiaoHongShuCrawler:
             }}
         }}
         
+        // 新增同类笔记函数
+        function createSimilarNote(noteId) {{
+            try {{
+                // 显示加载提示
+                const loadingModal = showLoadingModal('正在分析笔记内容，请稍候...');
+                
+                // 调用后端API分析笔记内容
+                fetch(`/api/create-similar-note/${{noteId}}`, {{
+                    method: 'POST',
+                    headers: {{
+                        'Content-Type': 'application/json',
+                    }},
+                }})
+                .then(response => response.json())
+                .then(data => {{
+                    hideLoadingModal(loadingModal);
+                    
+                    if (data.success) {{
+                        // 显示生成的笔记内容预览
+                        showNotePreview(data.generated_note, noteId);
+                    }} else {{
+                        alert('生成笔记失败: ' + (data.message || '未知错误'));
+                    }}
+                }})
+                .catch(error => {{
+                    hideLoadingModal(loadingModal);
+                    console.error('创建同类笔记失败:', error);
+                    alert('创建同类笔记失败，请稍后重试');
+                }});
+                
+            }} catch (error) {{
+                console.error('创建同类笔记失败:', error);
+                alert('创建同类笔记失败，请稍后重试');
+            }}
+        }}
+        
         // 设置小红书cookies
         function setCookiesForXiaohongshu() {{
             xiaohongShuCookies.forEach(cookie => {{
@@ -817,6 +864,238 @@ class XiaoHongShuCrawler:
                 console.log('图片加载失败，显示占位符');
                 img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjVGNUY1Ii8+Cjx0ZXh0IHg9IjEwMCIgeT0iMTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudHJhbCIgZmlsbD0iIzk5OTk5OSIgZm9udC1zaXplPSIxNCIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIj7lsI/nuqLkuaZDRE48L3RleHQ+Cjwvc3ZnPg==';
                 img.onerror = null; // 防止无限循环
+            }}
+        }}
+        
+        // 显示加载模态框
+        function showLoadingModal(message) {{
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0,0,0,0.7); z-index: 10000;
+                display: flex; align-items: center; justify-content: center;
+            `;
+            
+            const content = document.createElement('div');
+            content.style.cssText = `
+                background: white; padding: 30px; border-radius: 15px;
+                text-align: center; min-width: 300px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            `;
+            
+            content.innerHTML = `
+                <div style="font-size: 18px; margin-bottom: 20px;">${{message}}</div>
+                <div style="display: inline-block; width: 40px; height: 40px; border: 4px solid #f3f3f3;
+                     border-top: 4px solid #ff6b6b; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                <style>
+                    @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+                </style>
+            `;
+            
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+            return modal;
+        }}
+        
+        // 隐藏加载模态框
+        function hideLoadingModal(modal) {{
+            if (modal && modal.parentNode) {{
+                modal.parentNode.removeChild(modal);
+            }}
+        }}
+        
+        // 显示笔记预览模态框
+        function showNotePreview(generatedNote, originalNoteId) {{
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0,0,0,0.8); z-index: 10000;
+                display: flex; align-items: center; justify-content: center;
+                overflow-y: auto; padding: 20px;
+            `;
+            
+            const content = document.createElement('div');
+            content.style.cssText = `
+                background: white; padding: 30px; border-radius: 15px;
+                max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            `;
+            
+            // 构建原笔记信息HTML
+            let originalNoteHtml = '';
+            if (generatedNote.original_note_detail) {{
+                const original = generatedNote.original_note_detail;
+                let imagesHtml = '';
+                
+                if (original.images && original.images.length > 0) {{
+                    imagesHtml = `
+                        <div style="margin-top: 15px;">
+                            <h4 style="color: #666; margin-bottom: 10px;">📸 原笔记图片</h4>
+                            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                                ${{original.images.map(img => `
+                                    <img src="${{img.web_path}}" alt="原笔记图片" 
+                                         style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 2px solid #ddd;"
+                                         onclick="window.open('${{img.original_url}}', '_blank')" 
+                                         title="点击查看原图">
+                                `).join('')}}
+                            </div>
+                        </div>
+                    `;
+                }}
+                
+                originalNoteHtml = `
+                    <div style="background: #e8f4fd; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #2196F3;">
+                        <h3 style="color: #1976D2; margin-bottom: 15px;">📖 原笔记内容参考</h3>
+                        
+                        <div style="margin-bottom: 15px;">
+                            <h4 style="color: #333; margin-bottom: 8px;">📝 原标题</h4>
+                            <p style="font-size: 14px; line-height: 1.5; color: #555; background: white; padding: 10px; border-radius: 6px;">${{original.title}}</p>
+                        </div>
+                        
+                        <div style="margin-bottom: 15px;">
+                            <h4 style="color: #333; margin-bottom: 8px;">📄 原内容</h4>
+                            <p style="font-size: 13px; line-height: 1.6; color: #555; background: white; padding: 10px; border-radius: 6px; white-space: pre-wrap; max-height: 120px; overflow-y: auto;">${{original.content}}</p>
+                        </div>
+                        
+                        <div style="margin-bottom: 15px;">
+                            <h4 style="color: #333; margin-bottom: 8px;">🏷️ 原标签</h4>
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                ${{original.tags.map(tag => `<span style="background: #2196F3; color: white; padding: 3px 8px; border-radius: 12px; font-size: 11px;">${{tag}}</span>`).join('')}}
+                            </div>
+                        </div>
+                        
+                        <div style="margin-bottom: 10px;">
+                            <h4 style="color: #333; margin-bottom: 8px;">👤 原作者</h4>
+                            <span style="color: #666; font-size: 13px;">${{original.author}}</span>
+                        </div>
+                        
+                        ${{imagesHtml}}
+                    </div>
+                `;
+            }}
+            
+            content.innerHTML = `
+                <h2 style="color: #ff6b6b; margin-bottom: 20px; text-align: center;">
+                    🎨 AI生成的同类笔记预览
+                </h2>
+                
+                ${{originalNoteHtml}}
+                
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                    <h3 style="color: #333; margin-bottom: 10px;">📝 生成标题</h3>
+                    <p style="font-size: 16px; line-height: 1.5; margin-bottom: 15px;">${{generatedNote.title}}</p>
+                    
+                    <h3 style="color: #333; margin-bottom: 10px;">📄 生成内容</h3>
+                    <p style="font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${{generatedNote.content}}</p>
+                </div>
+                
+                <div style="background: #e8f5e8; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+                    <h3 style="color: #2e7d32; margin-bottom: 10px;">🏷️ 标签建议</h3>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        ${{generatedNote.tags.map(tag => `<span style="background: #4caf50; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px;">${{tag}}</span>`).join('')}}
+                    </div>
+                </div>
+                
+                <div style="background: #fff3e0; padding: 15px; border-radius: 10px; margin-bottom: 25px;">
+                    <h3 style="color: #f57c00; margin-bottom: 10px;">💡 创作建议</h3>
+                    <p style="font-size: 13px; line-height: 1.5; color: #666;">${{generatedNote.suggestions}}</p>
+                </div>
+                
+                <div style="display: flex; gap: 10px; justify-content: center;">
+                    <button onclick="openXhsCreatePage()" style="
+                        background: linear-gradient(45deg, #ff6b6b, #ff8e8e); color: white;
+                        border: none; padding: 12px 24px; border-radius: 25px;
+                        font-size: 14px; font-weight: 500; cursor: pointer;
+                        transition: all 0.3s ease;
+                    " onmouseover="this.style.transform='translateY(-2px)'" 
+                       onmouseout="this.style.transform='translateY(0)'">
+                        🚀 去小红书创建笔记
+                    </button>
+                    
+                    <button onclick="copyNoteContent('${{originalNoteId}}')" style="
+                        background: linear-gradient(45deg, #4caf50, #66bb6a); color: white;
+                        border: none; padding: 12px 24px; border-radius: 25px;
+                        font-size: 14px; font-weight: 500; cursor: pointer;
+                        transition: all 0.3s ease;
+                    " onmouseover="this.style.transform='translateY(-2px)'" 
+                       onmouseout="this.style.transform='translateY(0)'">
+                        📋 复制内容
+                    </button>
+                    
+                    <button onclick="closeNotePreview()" style="
+                        background: #999; color: white;
+                        border: none; padding: 12px 24px; border-radius: 25px;
+                        font-size: 14px; font-weight: 500; cursor: pointer;
+                        transition: all 0.3s ease;
+                    " onmouseover="this.style.transform='translateY(-2px)'" 
+                       onmouseout="this.style.transform='translateY(0)'">
+                        ❌ 关闭
+                    </button>
+                </div>
+            `;
+            
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+            
+            // 点击背景关闭
+            modal.addEventListener('click', function(e) {{
+                if (e.target === modal) {{
+                    closeNotePreview();
+                }}
+            }});
+            
+            // 设置全局引用以便关闭
+            window.currentNotePreviewModal = modal;
+            window.currentGeneratedNote = generatedNote;
+        }}
+        
+        // 关闭笔记预览
+        function closeNotePreview() {{
+            if (window.currentNotePreviewModal) {{
+                document.body.removeChild(window.currentNotePreviewModal);
+                window.currentNotePreviewModal = null;
+                window.currentGeneratedNote = null;
+            }}
+        }}
+        
+        // 打开小红书创建页面
+        function openXhsCreatePage() {{
+            // 设置小红书cookies
+            setCookiesForXiaohongshu();
+            
+            // 延迟跳转，确保cookies设置完成
+            setTimeout(() => {{
+                window.open('https://creator.xiaohongshu.com/publish/publish?source=official&from=menu&target=image', '_blank');
+            }}, 500);
+            
+            closeNotePreview();
+        }}
+        
+        // 复制笔记内容
+        function copyNoteContent(originalNoteId) {{
+            if (window.currentGeneratedNote) {{
+                const content = `标题：${{window.currentGeneratedNote.title}}
+
+内容：
+${{window.currentGeneratedNote.content}}
+
+标签：${{window.currentGeneratedNote.tags.join(' ')}}
+
+创作建议：
+${{window.currentGeneratedNote.suggestions}}`;
+                
+                navigator.clipboard.writeText(content).then(() => {{
+                    alert('📋 笔记内容已复制到剪贴板！');
+                }}).catch(err => {{
+                    console.error('复制失败:', err);
+                    // 备用方案：创建临时textarea
+                    const textarea = document.createElement('textarea');
+                    textarea.value = content;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    alert('📋 笔记内容已复制到剪贴板！');
+                }});
             }}
         }}
         

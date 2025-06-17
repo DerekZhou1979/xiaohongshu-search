@@ -93,7 +93,8 @@ FILE_PATHS = {
 URLS = {
     'XIAOHONGSHU_BASE': 'https://www.xiaohongshu.com',
     'SEARCH_URL_TEMPLATE': 'https://www.xiaohongshu.com/search_result?keyword={keyword}&source=web_search&type=comprehensive',
-    'LOGIN_URL': 'https://www.xiaohongshu.com/login'
+    'LOGIN_URL': 'https://www.xiaohongshu.com/login',
+    'CREATE_NOTE_URL': 'https://creator.xiaohongshu.com/publish/publish?source=official&from=menu&target=image'
 }
 
 # ===========================================
@@ -145,24 +146,29 @@ def show_config_menu():
     print("   - 启用所有策略")
     print("   - 关闭调试截图")
     print("   - 适中的验证严格度")
+    print("   - 启用后台笔记内容提取")
     print("")
     print("2️⃣  调试模式")
     print("   - 启用所有策略")
     print("   - 开启详细截图")
     print("   - 保存所有调试信息")
+    print("   - 启用后台笔记内容提取")
     print("")
     print("3️⃣  快速模式")
     print("   - 仅启用策略1（最快）")
     print("   - 关闭截图和详细日志")
     print("   - 降低验证严格度")
+    print("   - 关闭后台笔记内容提取")
     print("")
     print("4️⃣  兼容模式")
     print("   - 启用所有策略")
     print("   - 关闭截图")
     print("   - 最低验证严格度")
+    print("   - 启用后台笔记内容提取")
     print("")
     print("5️⃣  自定义模式")
     print("   - 手动配置各项功能")
+    print("   - 可选择后台笔记内容提取")
     print("")
     print("=" * 50)
     
@@ -191,6 +197,7 @@ def get_config_by_mode(mode):
             'validation_strict_level': 'medium',
             'enable_detailed_logs': True,
             'screenshot_interval': 0,  # 不截图
+            'enable_backend_extraction': True,  # 启用后台笔记提取
         },
         2: {  # 调试模式
             'name': '调试模式',
@@ -201,6 +208,7 @@ def get_config_by_mode(mode):
             'validation_strict_level': 'medium',
             'enable_detailed_logs': True,
             'screenshot_interval': 1,  # 每1秒截图
+            'enable_backend_extraction': True,  # 启用后台笔记提取
         },
         3: {  # 快速模式
             'name': '快速模式',
@@ -211,6 +219,7 @@ def get_config_by_mode(mode):
             'validation_strict_level': 'low',
             'enable_detailed_logs': False,
             'screenshot_interval': 0,
+            'enable_backend_extraction': False,  # 关闭后台笔记提取（快速模式）
         },
         4: {  # 兼容模式
             'name': '兼容模式',
@@ -221,6 +230,7 @@ def get_config_by_mode(mode):
             'validation_strict_level': 'low',
             'enable_detailed_logs': True,
             'screenshot_interval': 0,
+            'enable_backend_extraction': True,  # 启用后台笔记提取
         },
         5: {  # 自定义模式
             'name': '自定义模式',
@@ -231,6 +241,7 @@ def get_config_by_mode(mode):
             'validation_strict_level': None,
             'enable_detailed_logs': None,
             'screenshot_interval': None,
+            'enable_backend_extraction': None,  # 需要用户选择
         }
     }
     return configs.get(mode, configs[1])
@@ -246,6 +257,7 @@ def get_custom_config():
         'validation_strict_level': 'medium',
         'enable_detailed_logs': True,
         'screenshot_interval': 0,
+        'enable_backend_extraction': True,
     }
     
     print("\n🔧 自定义配置：")
@@ -255,6 +267,10 @@ def get_custom_config():
     config['enable_strategy_1'] = input("启用策略1（探索链接提取）？[Y/n]: ").lower() != 'n'
     config['enable_strategy_2'] = input("启用策略2（数据属性提取）？[Y/n]: ").lower() != 'n' 
     config['enable_strategy_3'] = input("启用策略3（JavaScript提取）？[Y/n]: ").lower() != 'n'
+    
+    # 后台提取功能
+    print("\n🔍 后台功能选择：")
+    config['enable_backend_extraction'] = input("启用后台笔记内容提取任务？[Y/n]: ").lower() != 'n'
     
     # 验证严格度
     print("\n🔍 验证严格度选择：")
@@ -367,6 +383,7 @@ def main():
         # 环境设置
         import json
         os.environ['CRAWL_CONFIG'] = json.dumps(config)  # 将配置传递给爬虫
+        os.environ['ENABLE_BACKEND_EXTRACTION'] = str(config.get('enable_backend_extraction', True)).lower()  # 设置后台提取开关
         
         print("🔍 检查Python依赖...")
         check_dependencies()
