@@ -262,6 +262,27 @@ def search():
         debug_manager.store_debug_info(session_id, "🚀 正在执行搜索...", "INFO")
         search_results = crawler.search(keyword, max_results=max_results, use_cache=use_cache)
         
+        # 调试信息：检查搜索结果
+        logger.info(f"搜索结果类型: {type(search_results)}")
+        logger.info(f"搜索结果长度: {len(search_results) if search_results else 0}")
+        if search_results:
+            logger.info(f"第一条结果: {search_results[0] if len(search_results) > 0 else 'N/A'}")
+        
+        # 如果搜索结果为空，尝试从缓存直接读取
+        if not search_results or len(search_results) == 0:
+            logger.warning("爬虫搜索结果为空，尝试从缓存直接读取...")
+            try:
+                cache_filename = f"search_{hashlib.md5(keyword.encode()).hexdigest()}.json"
+                cache_path = os.path.join(get_project_root(), 'cache', 'temp', cache_filename)
+                if os.path.exists(cache_path):
+                    with open(cache_path, 'r', encoding='utf-8') as cache_file:
+                        cache_data = json.load(cache_file)
+                        search_results = cache_data.get('data', [])
+                        logger.info(f"从缓存恢复了 {len(search_results)} 条结果")
+                        debug_manager.store_debug_info(session_id, f"✅ 从缓存恢复了 {len(search_results)} 条结果", "INFO")
+            except Exception as cache_error:
+                logger.error(f"从缓存恢复失败: {cache_error}")
+        
         # 根据配置决定是否启动后台爬虫提取详细内容
         if search_results and len(search_results) > 0:
             # 获取配置（从环境变量或配置文件）
@@ -285,21 +306,40 @@ def search():
         
         debug_manager.store_debug_info(session_id, f"✅ 搜索完成，找到 {len(notes)} 条笔记", "INFO")
         
-        # 生成HTML页面URL
-        html_hash = hashlib.md5(keyword.encode()).hexdigest()
-        html_url = f"/results/search_{html_hash}.html"           # 文件形式
-        html_api_url = f"/api/result-html/{html_hash}"           # API形式（推荐）
+        # 🔧 修复：只有在有有效笔记数据时才生成HTML URL
+        if notes and len(notes) > 0:
+            # 验证笔记数据的有效性
+            valid_notes = [note for note in notes if note.get('title') or note.get('desc')]
+            
+            if valid_notes:
+                # 生成HTML页面URL
+                html_hash = hashlib.md5(keyword.encode()).hexdigest()
+                html_url = f"/results/search_{html_hash}.html"           # 文件形式
+                html_api_url = f"/api/result-html/{html_hash}"           # API形式（推荐）
+                
+                debug_manager.store_debug_info(session_id, f"📄 生成HTML页面: {html_api_url}", "INFO")
+                
+                return jsonify({
+                    "keyword": keyword,
+                    "session_id": session_id,
+                    "timestamp": int(time.time()),
+                    "count": len(valid_notes),
+                    "notes": valid_notes,
+                    "html_url": html_url,
+                    "html_api_url": html_api_url
+                })
+            else:
+                debug_manager.store_debug_info(session_id, "⚠️ 笔记数据无效，没有标题或描述", "WARNING")
         
-        debug_manager.store_debug_info(session_id, f"📄 生成HTML页面: {html_api_url}", "INFO")
-        
+        # 🔧 修复：没有有效数据时不返回HTML URL
+        debug_manager.store_debug_info(session_id, "❌ 没有找到有效的笔记数据", "WARNING")
         return jsonify({
             "keyword": keyword,
             "session_id": session_id,
             "timestamp": int(time.time()),
-            "count": len(notes),
-            "notes": notes,
-            "html_url": html_url,
-            "html_api_url": html_api_url
+            "count": 0,
+            "notes": [],
+            "message": "未找到相关笔记"
         })
     except Exception as e:
         logger.error(f"搜索出错: {str(e)}")

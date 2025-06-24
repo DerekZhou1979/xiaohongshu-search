@@ -274,6 +274,11 @@ class XiaoHongShuCrawler:
     def _save_to_cache(self, keyword, data):
         """保存数据到缓存"""
         try:
+            # 🔧 修复：检查数据是否有效，只有非空数据才缓存
+            if not data or len(data) == 0:
+                self._debug_log("⚠️ 数据为空，跳过缓存保存", "WARNING")
+                return
+            
             cache_path = self._get_cache_path(keyword)
             cache_data = {
                 'timestamp': time.time(),
@@ -284,7 +289,8 @@ class XiaoHongShuCrawler:
                 json.dump(cache_data, f, ensure_ascii=False, indent=2)
             logger.info(f"数据已缓存: {cache_path}")
             
-            # 同时生成HTML结果页面
+            # 🔧 修复：只有有有效数据时才生成HTML页面
+            self._debug_log("📄 生成HTML结果页面...")
             self._generate_result_html(keyword, data)
             
         except Exception as e:
@@ -1152,8 +1158,15 @@ ${{window.currentGeneratedNote.suggestions}}`;
                 logger.info(f"缓存已过期: {cache_path}")
                 return None
             
+            # 🔧 修复：验证缓存数据是否有效
+            cached_data = cache.get('data', [])
+            if not cached_data or len(cached_data) == 0:
+                self._debug_log(f"⚠️ 缓存文件存在但数据为空，清理无效缓存: {cache_path}", "WARNING")
+                self._remove_empty_cache(keyword)
+                return None
+            
             logger.info(f"从缓存加载数据: {cache_path}")
-            return cache['data']
+            return cached_data
         except Exception as e:
             logger.error(f"加载缓存失败: {str(e)}")
             return None
@@ -1683,11 +1696,7 @@ ${{window.currentGeneratedNote.suggestions}}`;
         try:
             # 尝试多种搜索URL格式
             search_urls = [
-                f"https://www.xiaohongshu.com/search_result?keyword={keyword}&source=web_search&type=comprehensive",
-                f"https://www.xiaohongshu.com/search_result?keyword={keyword}&source=web_search",
-                f"https://www.xiaohongshu.com/search_result?keyword={keyword}",
-                f"https://www.xiaohongshu.com/search_result/{keyword}",
-                f"https://www.xiaohongshu.com/search/{keyword}",
+                f"https://www.xiaohongshu.com/search_result?keyword={keyword}&source=web_search&type=com"
             ]
             
             self._debug_log(f"🌐 准备了 {len(search_urls)} 个搜索URL")
@@ -1762,7 +1771,9 @@ ${{window.currentGeneratedNote.suggestions}}`;
                 # 验证结果是否与关键词相关
                 self._debug_log("🔍 验证结果与关键词的相关性...")
                 validated_results = self._validate_search_results(results, keyword)
-                if validated_results:
+                
+                # 🔧 修复：只有当真正有结果时才缓存和生成HTML
+                if validated_results and len(validated_results) > 0:
                     # 缓存结果
                     if use_cache:
                         self._debug_log("💾 缓存搜索结果...")
@@ -1771,7 +1782,9 @@ ${{window.currentGeneratedNote.suggestions}}`;
                     self._debug_log(f"🎉 搜索完成！找到 {len(validated_results)} 条相关结果")
                     return validated_results[:max_results]
                 else:
-                    self._debug_log(f"⚠️ 未找到与关键词 '{keyword}' 相关的搜索结果", "WARNING")
+                    # 🔧 修复：删除可能存在的空缓存文件
+                    self._debug_log(f"⚠️ 未找到与关键词 '{keyword}' 相关的搜索结果，清理空缓存", "WARNING")
+                    self._remove_empty_cache(keyword)
                     return []
             else:
                 self._debug_log("❌ 未找到任何搜索结果", "WARNING")
@@ -1780,6 +1793,32 @@ ${{window.currentGeneratedNote.suggestions}}`;
         except Exception as e:
             self._debug_log(f"❌ 搜索过程中发生错误: {str(e)}", "ERROR")
             return []
+
+    def _remove_empty_cache(self, keyword):
+        """
+        🔧 修复方法：删除空缓存文件
+        当搜索结果验证后发现没有有效内容时，清理空缓存文件
+        """
+        try:
+            cache_path = self._get_cache_path(keyword)
+            html_cache_dir = os.path.join(os.path.dirname(cache_path), 'results')
+            
+            # 删除JSON缓存文件
+            if os.path.exists(cache_path):
+                os.remove(cache_path)
+                self._debug_log(f"🗑️ 已删除空的JSON缓存文件: {cache_path}", "DEBUG")
+            
+            # 删除HTML缓存文件
+            if os.path.exists(html_cache_dir):
+                import hashlib
+                html_hash = hashlib.md5(keyword.encode()).hexdigest()
+                html_file = os.path.join(html_cache_dir, f"search_{html_hash}.html")
+                if os.path.exists(html_file):
+                    os.remove(html_file)
+                    self._debug_log(f"🗑️ 已删除空的HTML缓存文件: {html_file}", "DEBUG")
+                    
+        except Exception as e:
+            self._debug_log(f"❌ 清理空缓存时出错: {str(e)}", "WARNING")
 
     def _verify_search_page(self, page_source, keyword):
         """验证页面是否为搜索结果页面"""

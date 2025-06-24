@@ -278,16 +278,45 @@ document.addEventListener('DOMContentLoaded', function() {
         // 隐藏加载状态
         loadingSection.style.display = 'none';
         
-        // 检查是否有结果和HTML页面URL
-        if (data && data.notes && data.notes.length > 0 && (data.html_api_url || data.html_url)) {
-            // 优先使用API形式的HTML URL，避免文件路径问题
+        console.log('搜索结果数据:', data);
+        
+        // 检查是否有有效的笔记数据
+        const hasValidNotes = data && data.notes && data.notes.length > 0;
+        const hasHtmlUrl = data && (data.html_api_url || data.html_url);
+        
+        if (hasValidNotes && hasHtmlUrl) {
+            // 有笔记数据且有HTML URL，直接跳转
+            console.log('有笔记数据且有HTML URL，直接跳转...');
             const htmlUrl = data.html_api_url || data.html_url;
             window.location.href = htmlUrl;
-        } else if (data && data.notes && data.notes.length > 0) {
-            // 如果没有HTML URL，使用传统方式显示结果（备用方案）
+        } else if (!hasValidNotes && hasHtmlUrl) {
+            // 没有笔记数据但有HTML URL，先验证HTML是否存在
+            console.log('没有笔记数据但有HTML URL，验证HTML是否存在...');
+            const htmlUrl = data.html_api_url || data.html_url;
+            
+            // 发送HEAD请求检查HTML是否存在
+            fetch(htmlUrl, { method: 'HEAD' })
+                .then(response => {
+                    if (response.ok) {
+                        console.log('HTML页面存在，跳转到HTML页面');
+                        window.location.href = htmlUrl;
+                    } else {
+                        console.log('HTML页面不存在，显示空结果提示');
+                        emptyResult.style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    console.error('验证HTML页面失败:', error);
+                    console.log('验证失败，显示空结果提示');
+                    emptyResult.style.display = 'block';
+                });
+        } else if (hasValidNotes) {
+            // 有笔记数据但没有HTML URL，使用传统方式显示
+            console.log('有笔记数据但没有HTML URL，使用传统方式显示');
             showTraditionalResults(data.notes);
         } else {
             // 显示空结果提示
+            console.log('没有笔记数据，显示空结果提示');
             emptyResult.style.display = 'block';
         }
     }

@@ -160,7 +160,7 @@ def show_config_menu():
     print("   - 降低验证严格度")
     print("   - 关闭后台笔记内容提取")
     print("")
-    print("4️⃣  兼容模式")
+    print("4️⃣  双向模式")
     print("   - 启用所有策略")
     print("   - 关闭截图")
     print("   - 最低验证严格度")
@@ -197,7 +197,7 @@ def get_config_by_mode(mode):
             'validation_strict_level': 'medium',
             'enable_detailed_logs': True,
             'screenshot_interval': 0,  # 不截图
-            'enable_backend_extraction': True,  # 启用后台笔记提取
+            'enable_backend_extraction': False,  # 启用后台笔记提取
         },
         2: {  # 调试模式
             'name': '调试模式',
@@ -205,7 +205,7 @@ def get_config_by_mode(mode):
             'enable_strategy_1': True,
             'enable_strategy_2': True,
             'enable_strategy_3': True,
-            'validation_strict_level': 'medium',
+            'validation_strict_level': 'low',
             'enable_detailed_logs': True,
             'screenshot_interval': 1,  # 每1秒截图
             'enable_backend_extraction': True,  # 启用后台笔记提取
@@ -221,8 +221,8 @@ def get_config_by_mode(mode):
             'screenshot_interval': 0,
             'enable_backend_extraction': False,  # 关闭后台笔记提取（快速模式）
         },
-        4: {  # 兼容模式
-            'name': '兼容模式',
+        4: {  # 双向模式
+            'name': '双向模式',
             'enable_debug_screenshots': False,
             'enable_strategy_1': True,
             'enable_strategy_2': True,

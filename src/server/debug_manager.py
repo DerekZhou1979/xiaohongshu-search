@@ -3,49 +3,51 @@
 
 """
 Debug信息管理器
-负责收集、存储和提供前台页面的debug信息显示功能
+用于存储和管理搜索过程中的调试信息
 """
 
 import time
 import threading
-from typing import Dict, List, Optional
+from typing import Dict, List, Any
+from datetime import datetime
 
 class DebugManager:
     """Debug信息管理器"""
     
     def __init__(self):
-        """初始化debug管理器"""
-        self.debug_store: Dict[str, List[Dict]] = {}
-        self.lock = threading.Lock()
-        self.max_messages_per_session = 100
-    
+        """初始化Debug管理器"""
+        self._debug_data = {}  # 存储debug信息
+        self._lock = threading.Lock()  # 线程锁
+        
     def store_debug_info(self, session_id: str, message: str, level: str = "INFO"):
         """
-        存储debug信息
+        存储Debug信息
         
         Args:
             session_id: 会话ID
-            message: debug消息
-            level: 日志级别 (INFO, WARNING, ERROR)
+            message: 调试信息
+            level: 日志级别 (INFO, WARNING, ERROR, DEBUG)
         """
-        with self.lock:
-            if session_id not in self.debug_store:
-                self.debug_store[session_id] = []
+        with self._lock:
+            if session_id not in self._debug_data:
+                self._debug_data[session_id] = []
             
-            self.debug_store[session_id].append({
+            debug_item = {
                 'timestamp': time.time(),
-                'level': level,
+                'time_str': datetime.now().strftime("%H:%M:%S"),
                 'message': message,
-                'time_str': time.strftime('%H:%M:%S', time.localtime())
-            })
+                'level': level.upper()
+            }
             
-            # 限制每个会话最多存储指定数量的debug信息
-            if len(self.debug_store[session_id]) > self.max_messages_per_session:
-                self.debug_store[session_id] = self.debug_store[session_id][-self.max_messages_per_session:]
+            self._debug_data[session_id].append(debug_item)
+            
+            # 限制每个会话最多保存1000条debug信息
+            if len(self._debug_data[session_id]) > 1000:
+                self._debug_data[session_id] = self._debug_data[session_id][-500:]
     
-    def get_debug_info(self, session_id: str, since: float = 0) -> Dict:
+    def get_debug_info(self, session_id: str, since: float = 0) -> Dict[str, Any]:
         """
-        获取debug信息
+        获取Debug信息
         
         Args:
             session_id: 会话ID
@@ -54,79 +56,92 @@ class DebugManager:
         Returns:
             包含debug信息的字典
         """
-        with self.lock:
-            if session_id not in self.debug_store:
+        with self._lock:
+            if session_id not in self._debug_data:
                 return {
-                    "session_id": session_id,
-                    "debug_info": [],
-                    "last_timestamp": 0
+                    'debug_info': [],
+                    'last_timestamp': since,
+                    'total_count': 0
                 }
             
-            debug_info = self.debug_store[session_id]
+            # 过滤指定时间戳之后的信息
+            debug_info = [
+                item for item in self._debug_data[session_id]
+                if item['timestamp'] > since
+            ]
             
-            # 如果指定了since参数，只返回该时间戳之后的信息
-            if since > 0:
-                debug_info = [info for info in debug_info if info['timestamp'] > since]
+            last_timestamp = max(
+                [item['timestamp'] for item in debug_info],
+                default=since
+            )
             
             return {
-                "session_id": session_id,
-                "debug_info": debug_info,
-                "last_timestamp": debug_info[-1]['timestamp'] if debug_info else 0
+                'debug_info': debug_info,
+                'last_timestamp': last_timestamp,
+                'total_count': len(self._debug_data[session_id])
             }
     
-    def clear_session(self, session_id: str):
+    def clear_debug_info(self, session_id: str):
         """
-        清除指定会话的debug信息
+        清除指定会话的Debug信息
         
         Args:
             session_id: 会话ID
         """
-        with self.lock:
-            if session_id in self.debug_store:
-                del self.debug_store[session_id]
+        with self._lock:
+            if session_id in self._debug_data:
+                del self._debug_data[session_id]
     
     def get_all_sessions(self) -> List[str]:
         """
-        获取所有活跃的会话ID
+        获取所有会话ID
         
         Returns:
             会话ID列表
         """
-        with self.lock:
-            return list(self.debug_store.keys())
+        with self._lock:
+            return list(self._debug_data.keys())
     
-    def cleanup_old_sessions(self, max_age: int = 3600):
+    def cleanup_old_sessions(self, max_age_hours: int = 24):
         """
-        清理过期的会话信息
+        清理超过指定时间的旧会话
         
         Args:
-            max_age: 最大保存时间（秒），默认1小时
+            max_age_hours: 最大保存时间（小时）
         """
         current_time = time.time()
+        max_age_seconds = max_age_hours * 3600
         
-        with self.lock:
+        with self._lock:
             sessions_to_remove = []
             
-            for session_id, debug_info in self.debug_store.items():
-                if debug_info:
-                    last_timestamp = debug_info[-1]['timestamp']
-                    if current_time - last_timestamp > max_age:
-                        sessions_to_remove.append(session_id)
+            for session_id, debug_items in self._debug_data.items():
+                if not debug_items:
+                    sessions_to_remove.append(session_id)
+                    continue
+                
+                # 检查最新的debug信息时间
+                latest_timestamp = max(item['timestamp'] for item in debug_items)
+                if current_time - latest_timestamp > max_age_seconds:
+                    sessions_to_remove.append(session_id)
             
             for session_id in sessions_to_remove:
-                del self.debug_store[session_id]
+                del self._debug_data[session_id]
+            
+            return len(sessions_to_remove)
     
     def create_debug_callback(self, session_id: str):
         """
-        创建debug回调函数，用于爬虫模块
+        创建Debug回调函数
         
         Args:
             session_id: 会话ID
             
         Returns:
-            debug回调函数
+            回调函数
         """
         def debug_callback(message: str, level: str = "INFO"):
+            """Debug回调函数"""
             self.store_debug_info(session_id, message, level)
         
         return debug_callback

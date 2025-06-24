@@ -336,7 +336,9 @@ class NoteContentGenerator:
             
             for driver_path in driver_paths:
                 if os.path.exists(driver_path):
-                    driver = webdriver.Chrome(executable_path=driver_path, options=chrome_options)
+                    from selenium.webdriver.chrome.service import Service
+                    service = Service(driver_path)
+                    driver = webdriver.Chrome(service=service, options=chrome_options)
                     return driver
             
             # 如果没有找到指定路径，尝试系统PATH中的chromedriver
