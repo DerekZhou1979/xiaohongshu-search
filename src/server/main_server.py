@@ -32,7 +32,7 @@ from flask import Flask, request, jsonify, send_from_directory, redirect, url_fo
 from flask_cors import CORS
 from src.crawler.XHS_crawler import XiaoHongShuCrawler
 from src.server.debug_manager import debug_manager
-from src.server.note_generator import NoteContentGenerator
+# from src.server.note_generator import NoteContentGenerator  # 已删除，功能已整合
 from src.server.note_content_extractor import NoteContentExtractor
 
 # ==================== 配置和初始化 ====================
@@ -53,11 +53,15 @@ COOKIES_FILE = os.path.join('cache', 'cookies', 'xiaohongshu_cookies.json')
 # 全局爬虫实例（延迟初始化）
 crawler = None
 
-# 笔记内容生成器实例
-note_generator = NoteContentGenerator()
+# 笔记内容生成器实例（已删除，功能已整合到统一提取器）
+# note_generator = NoteContentGenerator()
 
 # 笔记内容提取器实例
 note_extractor = NoteContentExtractor()
+
+# 统一数据提取器实例
+from src.server.unified_extractor import UnifiedExtractor
+unified_extractor = UnifiedExtractor()
 
 # HTML结果内存缓存（避免文件路径问题）
 html_results_cache = {}
@@ -439,18 +443,14 @@ def create_similar_note(note_id):
         # 添加note_id到原笔记信息中
         original_note['note_id'] = note_id
         
-        # 使用内容生成器生成同类笔记
-        logger.info(f"正在生成同类笔记，基于笔记: {note_id}")
-        generated_note = note_generator.generate_similar_note(original_note)
-        
-        # 返回成功结果
+        # 笔记生成功能已移除，返回错误信息
+        logger.warning(f"笔记生成功能已移除，无法生成基于笔记: {note_id} 的同类笔记")
         return jsonify({
-            "success": True,
-            "generated_note": generated_note,
-            "original_note_id": note_id,
-            "debug_session_id": generated_note.get('debug_session_id'),
-            "timestamp": int(time.time())
-        })
+            "success": False,
+            "message": "笔记生成功能已移除，请使用其他方式"
+        }), 501
+        
+        # 这部分代码不会执行到，因为上面已经返回了错误
         
     except Exception as e:
         logger.error(f"创建同类笔记失败: {str(e)}")
@@ -472,12 +472,12 @@ def get_note_generation_debug(session_id):
         JSON格式的debug信息
     """
     try:
-        debug_info = note_generator.get_debug_info(session_id)
+        # 笔记生成功能已移除
         return jsonify({
-            "success": True,
-            "debug_info": debug_info,
+            "success": False,
+            "message": "笔记生成功能已移除",
             "session_id": session_id
-        })
+        }), 501
     except Exception as e:
         logger.error(f"获取笔记生成debug信息失败: {str(e)}")
         return jsonify({
@@ -602,20 +602,20 @@ def get_note_data():
         if not full_path.startswith(cache_dir):
             return jsonify({'error': '非法的文件路径'}), 403
         
-        # 如果是HTML文件，尝试提取数据
+        # 如果是HTML文件，使用统一提取器提取数据
         if file_path.endswith('.html'):
             if os.path.exists(full_path):
-                logger.info(f"从HTML文件提取数据: {full_path}")
-                extracted_data = note_extractor.extract_from_html_file(full_path)
+                logger.info(f"使用统一提取器从HTML文件提取数据: {full_path}")
+                extracted_data = unified_extractor.extract_from_html_file_hybrid(full_path)
                 
                 if extracted_data:
                     # 尝试保存提取的数据
                     try:
-                        note_id = extracted_data.get('note_id')
-                        saved_path = note_extractor.save_extracted_data(extracted_data, note_id)
-                        logger.info(f"已保存提取数据到: {saved_path}")
+                        keyword = "extracted"
+                        saved_path = unified_extractor.save_unified_results(extracted_data.get('notes', []), keyword)
+                        logger.info(f"已保存统一提取数据到: {saved_path}")
                     except Exception as save_error:
-                        logger.warning(f"保存提取数据失败: {save_error}")
+                        logger.warning(f"保存统一提取数据失败: {save_error}")
                     
                     return jsonify(extracted_data)
                 else:
@@ -649,6 +649,62 @@ def get_note_data():
 def note_detail_page():
     """笔记详情页面"""
     return send_from_directory('../../static', 'note_detail.html')
+
+@app.route('/api/unified-extract', methods=['POST'])
+def unified_extract():
+    """
+    统一数据提取API
+    批量处理缓存中的HTML文件，使用统一提取器
+    """
+    try:
+        # 获取参数
+        data = request.get_json() or {}
+        keyword = data.get('keyword', 'batch_extract')
+        max_files = data.get('max_files', None)
+        pattern = data.get('pattern', '*.html')
+        
+        logger.info(f"启动统一数据提取: keyword={keyword}, max_files={max_files}, pattern={pattern}")
+        
+        # 执行批量提取
+        results = unified_extractor.extract_from_html_files(pattern=pattern, max_files=max_files)
+        
+        if results:
+            # 保存统一结果
+            saved_path = unified_extractor.save_unified_results(results, keyword)
+            
+            # 生成HTML预览
+            html_file = unified_extractor._generate_html_preview(results, keyword)
+            
+            return jsonify({
+                'success': True,
+                'count': len(results),
+                'notes': results,
+                'saved_path': saved_path,
+                'html_preview': html_file,
+                'keyword': keyword,
+                'extraction_info': {
+                    'extractor_version': '2.0.0',
+                    'processed_at': time.time(),
+                    'strategies_used': list(set(note.get('method', 'unknown') for note in results))
+                },
+                'message': f'成功提取 {len(results)} 条笔记数据'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'count': 0,
+                'notes': [],
+                'message': '未提取到任何数据'
+            })
+            
+    except Exception as e:
+        logger.error(f"统一数据提取失败: {str(e)}")
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': '统一数据提取失败'
+        }), 500
 
 # ==================== HTML结果页面路由 ====================
 

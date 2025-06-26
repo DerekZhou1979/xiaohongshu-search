@@ -1,10 +1,39 @@
-Flask==3.0.0
-Flask-CORS==4.0.0
-selenium==4.15.2
-requests==2.31.0
-beautifulsoup4==4.12.2
-lxml==4.9.3
-urllib3==2.0.7
-webdriver-manager==4.0.1
-Pillow==10.1.0
-python-dotenv==1.0.0 
+# Web框架
+Flask>=3.0.0
+Flask-CORS>=4.0.0
+
+# 爬虫核心依赖
+selenium>=4.15.2
+requests>=2.31.0
+beautifulsoup4>=4.12.2
+lxml>=4.9.3
+urllib3>=2.0.7
+webdriver-manager>=4.0.1
+
+# 图像处理
+Pillow>=10.1.0
+
+# 环境配置
+python-dotenv>=1.0.0
+
+# 中文分词（用于关键词提取）
+jieba>=0.42.1
+
+# 注意：当前实现使用模板生成，不需要额外的大模型依赖
+# 如果用户需要AI生成功能，可以根据需要取消相关依赖的注释
+
+# 可选的大模型API依赖（注释状态）
+# OpenAI API
+# openai>=1.0.0
+
+# 百度文心一言 API
+# qianfan>=0.0.5
+
+# 阿里云通义千问 API
+# dashscope>=1.0.0
+
+# 腾讯云混元 API
+# tencentcloud-sdk-python>=3.0.0
+
+# 本地大模型（如使用ollama）
+# ollama>=0.1.0

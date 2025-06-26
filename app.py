@@ -201,14 +201,14 @@ def get_config_by_mode(mode):
         },
         2: {  # 调试模式
             'name': '调试模式',
-            'enable_debug_screenshots': True,
+            'enable_debug_screenshots': False,
             'enable_strategy_1': True,
             'enable_strategy_2': True,
             'enable_strategy_3': True,
             'validation_strict_level': 'low',
             'enable_detailed_logs': True,
             'screenshot_interval': 1,  # 每1秒截图
-            'enable_backend_extraction': True,  # 启用后台笔记提取
+            'enable_backend_extraction': False,  # 启用后台笔记提取
         },
         3: {  # 快速模式
             'name': '快速模式',
@@ -227,7 +227,7 @@ def get_config_by_mode(mode):
             'enable_strategy_1': True,
             'enable_strategy_2': True,
             'enable_strategy_3': True,
-            'validation_strict_level': 'low',
+            'validation_strict_level': 'medium',  # 🔧 修复：提高验证严格度
             'enable_detailed_logs': True,
             'screenshot_interval': 0,
             'enable_backend_extraction': True,  # 启用后台笔记提取

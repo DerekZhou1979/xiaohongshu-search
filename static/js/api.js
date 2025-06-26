@@ -235,7 +235,72 @@ async function checkApiHealth() {
     }
 }
 
+/**
+ * 执行统一批量提取
+ * 
+ * @param {Object} options - 提取选项
+ * @param {string} options.keyword - 关键词标识
+ * @param {number} options.max_files - 最大文件数量
+ * @param {string} options.pattern - 文件匹配模式
+ * @returns {Promise<Object>} 提取结果对象
+ * @throws {Error} 网络错误或API错误
+ */
+async function performUnifiedExtraction(options = {}) {
+    try {
+        const requestData = {
+            keyword: options.keyword || 'batch_extract',
+            max_files: options.max_files || null,
+            pattern: options.pattern || '*.html'
+        };
+        
+        // 创建请求控制器（用于超时控制）
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            controller.abort();
+        }, REQUEST_TIMEOUT * 2); // 批量提取需要更长时间
+        
+        // 发送请求
+        const response = await fetch(`${API_BASE_URL}/unified-extract`, {
+            method: 'POST',
+            signal: controller.signal,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestData)
+        });
+        
+        // 清除超时定时器
+        clearTimeout(timeoutId);
+        
+        // 检查响应状态
+        if (!response.ok) {
+            throw new Error(`批量提取失败: HTTP ${response.status}`);
+        }
+        
+        // 解析响应数据
+        const data = await response.json();
+        
+        // 验证响应数据格式
+        if (!data || typeof data !== 'object') {
+            throw new Error('服务器返回数据格式错误');
+        }
+        
+        return data;
+        
+    } catch (error) {
+        // 统一错误处理
+        if (error.name === 'AbortError') {
+            throw new Error('批量提取超时，请重试');
+        } else if (error.message.includes('Failed to fetch')) {
+            throw new Error('网络连接失败，请检查网络状态');
+        } else {
+            console.error('批量提取API错误:', error);
+            throw error;
+        }
+    }
+}
+
 // ==================== 导出（如果需要模块化） ====================
 
 // 如果在支持ES6模块的环境中，可以取消注释以下行
-// export { getRedBookNotes, getNoteDetail, getHotKeywords, checkApiHealth }; 
+// export { getRedBookNotes, getNoteDetail, getHotKeywords, checkApiHealth, performUnifiedExtraction }; 

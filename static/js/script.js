@@ -193,6 +193,125 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
     
+    // ==================== 批量提取功能 ====================
+    
+    /**
+     * 执行批量提取
+     */
+    async function performBatchExtraction() {
+        const extractButton = document.getElementById('extract-button');
+        
+        // 禁用按钮，防止重复点击
+        if (extractButton) {
+            extractButton.disabled = true;
+            extractButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在提取...';
+        }
+        
+        try {
+            // 显示加载状态
+            showLoadingState('正在执行批量提取');
+            showLoadingProgress('扫描缓存目录中的HTML文件...');
+            
+            // 获取关键词（如果有搜索过的话）
+            const keyword = searchInput.value.trim() || 'batch_extract_' + Date.now();
+            
+            // 执行统一提取
+            const result = await performUnifiedExtraction({
+                keyword: keyword,
+                max_files: 50, // 限制最大文件数量
+                pattern: '*.html'
+            });
+            
+            if (result.success && result.notes && result.notes.length > 0) {
+                // 显示提取成功消息
+                showLoadingProgress(`提取成功！共找到 ${result.count} 条笔记数据`);
+                
+                // 等待2秒后显示结果
+                setTimeout(() => {
+                    handleExtractionSuccess(result);
+                }, 2000);
+            } else {
+                handleExtractionError(new Error(result.message || '未提取到任何数据'));
+            }
+            
+        } catch (error) {
+            console.error('批量提取失败:', error);
+            handleExtractionError(error);
+        } finally {
+            // 恢复按钮状态
+            if (extractButton) {
+                extractButton.disabled = false;
+                extractButton.innerHTML = '<i class="fas fa-download"></i> 批量提取缓存';
+            }
+        }
+    }
+    
+    /**
+     * 处理提取成功
+     * @param {Object} result - 提取结果
+     */
+    function handleExtractionSuccess(result) {
+        // 停止debug监控
+        stopDebugMonitoring();
+        
+        // 隐藏加载状态
+        if (loadingSection) loadingSection.style.display = 'none';
+        
+        // 设置搜索词显示
+        if (searchTermSpan) {
+            searchTermSpan.textContent = `缓存提取 (${result.keyword})`;
+        }
+        
+        // 设置结果时间
+        if (resultTimeDiv) {
+            resultTimeDiv.textContent = `提取时间: ${new Date().toLocaleString()} | 共 ${result.count} 条记录`;
+        }
+        
+        // 显示结果
+        showTraditionalResults(result.notes);
+        
+        // 显示成功提示
+        if (result.html_preview) {
+            console.log('HTML预览文件已生成:', result.html_preview);
+        }
+        
+        // 在控制台显示详细信息
+        console.log('批量提取结果:', {
+            count: result.count,
+            strategies: result.extraction_info?.strategies_used,
+            saved_path: result.saved_path,
+            html_preview: result.html_preview
+        });
+    }
+    
+    /**
+     * 处理提取错误
+     * @param {Error} error - 错误对象
+     */
+    function handleExtractionError(error) {
+        console.error('批量提取失败:', error);
+        
+        // 停止debug监控
+        stopDebugMonitoring();
+        
+        // 隐藏加载状态
+        if (loadingSection) loadingSection.style.display = 'none';
+        
+        // 显示错误提示
+        if (emptyResult) {
+            emptyResult.style.display = 'block';
+            
+            // 修改错误提示内容
+            const emptyIcon = emptyResult.querySelector('.empty-icon i');
+            const emptyTitle = emptyResult.querySelector('h2');
+            const emptyText = emptyResult.querySelector('p');
+            
+            if (emptyIcon) emptyIcon.className = 'fas fa-exclamation-triangle';
+            if (emptyTitle) emptyTitle.textContent = '批量提取失败';
+            if (emptyText) emptyText.textContent = error.message || '请检查缓存目录是否有HTML文件';
+        }
+    }
+
     // ==================== 核心搜索功能 ====================
     
     /**
@@ -506,6 +625,14 @@ document.addEventListener('DOMContentLoaded', function() {
     if (searchButton) {
         searchButton.addEventListener('click', function() {
             performSearch(searchInput.value);
+        });
+    }
+    
+    // 批量提取按钮点击
+    const extractButton = document.getElementById('extract-button');
+    if (extractButton) {
+        extractButton.addEventListener('click', async function() {
+            await performBatchExtraction();
         });
     }
     

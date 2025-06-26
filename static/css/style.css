@@ -106,6 +106,30 @@ header {
     background-color: var(--secondary-color);
 }
 
+/* 批量提取按钮样式 */
+.extract-btn {
+    padding: 12px 24px;
+    background-color: #17a2b8;
+    color: white;
+    border: none;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-size: 16px;
+    transition: var(--transition);
+    margin-left: 10px;
+}
+
+.extract-btn:hover {
+    background-color: #138496;
+    transform: translateY(-1px);
+}
+
+.extract-btn:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+    transform: none;
+}
+
 /* 品牌展示区域样式 */
 .brand-showcase {
     max-width: 900px;

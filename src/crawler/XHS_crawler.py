@@ -1172,8 +1172,11 @@ ${{window.currentGeneratedNote.suggestions}}`;
             return None
     
     def _handle_anti_bot(self):
-        """处理反爬虫机制 - 改进版本"""
+        """处理反爬虫机制 - 改进版本，增强搜索页面保持功能"""
         try:
+            original_url = self.driver.current_url
+            self._debug_log(f"🔍 反爬虫处理前URL: {original_url}")
+            
             # 等待页面稳定
             time.sleep(8)
             
@@ -1183,7 +1186,7 @@ ${{window.currentGeneratedNote.suggestions}}`;
             has_anti_bot = any(keyword in page_text for keyword in anti_bot_keywords)
             
             if has_anti_bot:
-                logger.warning("检测到反爬虫机制或登录要求，尝试处理...")
+                self._debug_log("⚠️ 检测到反爬虫机制或登录要求，尝试处理...")
             
             # 尝试关闭各种可能的弹窗和遮罩
             close_strategies = [
@@ -1229,7 +1232,7 @@ ${{window.currentGeneratedNote.suggestions}}`;
                             try:
                                 if element.is_displayed() and element.is_enabled():
                                     element.click()
-                                    logger.info(f"成功点击关闭按钮: {selector}")
+                                    self._debug_log(f"✅ 成功点击关闭按钮: {selector}")
                                     closed_elements += 1
                                     time.sleep(2)
                             except Exception:
@@ -1242,7 +1245,7 @@ ${{window.currentGeneratedNote.suggestions}}`;
                     continue
             
             if closed_elements > 0:
-                logger.info(f"共关闭了 {closed_elements} 个弹窗/遮罩")
+                self._debug_log(f"✅ 共关闭了 {closed_elements} 个弹窗/遮罩")
                 time.sleep(5)  # 等待页面重新加载
             
             # 尝试按ESC键关闭弹窗
@@ -1250,34 +1253,445 @@ ${{window.currentGeneratedNote.suggestions}}`;
                 from selenium.webdriver.common.keys import Keys
                 self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
                 time.sleep(2)
-                logger.info("已发送ESC键")
+                self._debug_log("✅ 已发送ESC键")
             except Exception:
                 pass
             
+            # 🔧 新增：检查是否被重定向，如果是则强制返回搜索页面
+            current_url = self.driver.current_url
+            self._debug_log(f"🔍 反爬虫处理后URL: {current_url}")
+            
+            # 检查是否被重定向到非搜索页面
+            redirected_to_non_search = self._check_redirected_from_search(original_url, current_url)
+            
+            if redirected_to_non_search:
+                self._debug_log("⚠️ 检测到被重定向到非搜索页面，尝试强制返回搜索")
+                success = self._force_return_to_search(original_url)
+                if not success:
+                    self._debug_log("❌ 强制返回搜索页面失败", "WARNING")
+                    return False
+            
             # 检查页面是否仍然有阻挡元素
             try:
-                current_url = self.driver.current_url
                 if 'login' in current_url.lower() or 'auth' in current_url.lower() or 'captcha' in current_url.lower():
-                    logger.warning("检测到验证码页面，启动人工辅助验证...")
+                    self._debug_log("🔐 检测到验证码页面，启动人工辅助验证...")
                     return self._handle_captcha_verification()
                     
                 # 检查页面内容长度
                 page_content_length = len(self.driver.page_source)
                 if page_content_length < 5000:
-                    logger.warning(f"页面内容较少({page_content_length}字符)，可能仍被反爬虫阻挡")
+                    self._debug_log(f"⚠️ 页面内容较少({page_content_length}字符)，可能仍被反爬虫阻挡")
                 else:
-                    logger.info(f"页面内容正常({page_content_length}字符)")
+                    self._debug_log(f"✅ 页面内容正常({page_content_length}字符)")
                     
             except Exception as e:
-                logger.warning(f"检查页面状态时出错: {str(e)}")
+                self._debug_log(f"⚠️ 检查页面状态时出错: {str(e)}", "WARNING")
             
-            logger.info("反爬虫处理完成")
+            self._debug_log("✅ 反爬虫处理完成")
             return True
             
         except Exception as e:
-            logger.warning(f"处理反爬虫机制时出错: {str(e)}")
+            self._debug_log(f"❌ 处理反爬虫机制时出错: {str(e)}", "WARNING")
             return True  # 即使处理失败也继续执行
-    
+
+    def _check_redirected_from_search(self, original_url, current_url):
+        """检查是否从搜索页面被重定向到其他页面"""
+        try:
+            # 检查原始URL是否为搜索URL
+            search_indicators_original = [
+                'search_result' in original_url,
+                'keyword=' in original_url,
+                'search' in original_url.lower()
+            ]
+            
+            # 检查当前URL是否为非搜索页面
+            non_search_indicators_current = [
+                'search_result' not in current_url,
+                'keyword=' not in current_url,
+                'homefeed' in current_url,
+                'explore' in current_url,
+                'recommend' in current_url,
+                current_url.count('/') <= 3,  # 可能是首页
+                current_url.endswith('xiaohongshu.com') or current_url.endswith('xiaohongshu.com/')
+            ]
+            
+            was_search = any(search_indicators_original)
+            is_non_search = any(non_search_indicators_current)
+            
+            if was_search and is_non_search:
+                self._debug_log(f"🚨 检测到重定向：{original_url[:50]}... -> {current_url[:50]}...")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            self._debug_log(f"⚠️ 检查重定向状态出错: {str(e)}", "WARNING")
+            return False
+
+    def _is_recommendation_page(self, page_source, current_url):
+        """检测是否为推荐页面"""
+        try:
+            # 首先检查是否在搜索结果页面 - 如果在搜索页面，则不是推荐页面
+            if ('search_result' in current_url or 
+                'keyword=' in current_url or 
+                '/search/' in current_url):
+                self._debug_log(f"✅ 确认在搜索页面，URL: {current_url}")
+                return False
+            
+            # 检测推荐页面的多种标识
+            recommendation_indicators = [
+                "homefeed_recommend" in page_source,
+                "首页推荐" in page_source,
+                ("推荐" in page_source and "搜索结果" not in page_source and "search" not in page_source),
+                "recommend" in current_url.lower(),
+                "explore" in current_url.lower(),
+                (current_url.endswith("xiaohongshu.com") or current_url.endswith("xiaohongshu.com/")),
+                (current_url.count('/') <= 3 and 'search' not in current_url)  # 可能是首页且不包含search
+            ]
+            
+            is_recommendation = any(recommendation_indicators)
+            
+            if is_recommendation:
+                self._debug_log(f"🔍 推荐页面检测结果: {recommendation_indicators}")
+                self._debug_log(f"📍 当前URL: {current_url}")
+                return True
+            
+            self._debug_log(f"✅ 不是推荐页面，URL: {current_url}")
+            return False
+            
+        except Exception as e:
+            self._debug_log(f"⚠️ 推荐页面检测出错: {str(e)}")
+            return False
+
+    def _force_return_to_search(self, original_search_url, max_attempts=3):
+        """强制返回搜索页面"""
+        try:
+            self._debug_log(f"🔄 开始强制返回搜索页面，最大尝试次数: {max_attempts}")
+            
+            for attempt in range(max_attempts):
+                self._debug_log(f"🔄 尝试 {attempt + 1}/{max_attempts}: 返回搜索页面")
+                
+                try:
+                    # 方法1：直接导航到原始搜索URL
+                    self.driver.get(original_search_url)
+                    time.sleep(5)
+                    
+                    # 检查是否成功返回搜索页面
+                    current_url = self.driver.current_url
+                    page_source = self.driver.page_source
+                    
+                    if 'search_result' in current_url or 'keyword=' in current_url:
+                        self._debug_log(f"✅ 方法1成功：直接导航返回搜索页面")
+                        return True
+                    
+                    # 方法2：如果直接导航失败，尝试通过搜索框搜索
+                    if attempt == 0:  # 只在第一次尝试时使用搜索框
+                        keyword = self._extract_keyword_from_url(original_search_url)
+                        if keyword and self._try_search_via_search_box(keyword):
+                            self._debug_log(f"✅ 方法2成功：通过搜索框返回搜索页面")
+                            return True
+                    
+                    # 方法3：构造新的搜索URL
+                    if attempt == 1:  # 在第二次尝试时使用
+                        keyword = self._extract_keyword_from_url(original_search_url)
+                        if keyword and self._try_construct_new_search_url(keyword):
+                            self._debug_log(f"✅ 方法3成功：构造新搜索URL返回搜索页面")
+                            return True
+                    
+                    self._debug_log(f"❌ 尝试 {attempt + 1} 失败，当前URL: {current_url[:50]}...")
+                    time.sleep(3)
+                    
+                except Exception as e:
+                    self._debug_log(f"❌ 尝试 {attempt + 1} 出错: {str(e)}")
+                    time.sleep(3)
+                    continue
+            
+            self._debug_log(f"❌ 所有尝试都失败，无法强制返回搜索页面")
+            return False
+            
+        except Exception as e:
+            self._debug_log(f"❌ 强制返回搜索页面时出错: {str(e)}", "ERROR")
+            return False
+
+    def _extract_keyword_from_url(self, url):
+        """从URL中提取关键词"""
+        try:
+            from urllib.parse import urlparse, parse_qs, unquote
+            
+            parsed = urlparse(url)
+            query_params = parse_qs(parsed.query)
+            
+            # 尝试从keyword参数获取
+            if 'keyword' in query_params:
+                keyword = unquote(query_params['keyword'][0])
+                self._debug_log(f"🔍 从URL提取关键词: {keyword}")
+                return keyword
+            
+            return None
+            
+        except Exception as e:
+            self._debug_log(f"⚠️ 提取关键词失败: {str(e)}")
+            return None
+
+    def _try_search_via_search_box(self, keyword):
+        """尝试通过搜索框进行搜索"""
+        try:
+            self._debug_log(f"🔍 尝试通过搜索框搜索: {keyword}")
+            
+            # 首先导航到主页
+            self.driver.get("https://www.xiaohongshu.com")
+            time.sleep(3)
+            
+            # 尝试找到搜索框
+            search_box_selectors = [
+                "input[placeholder*='搜索']",
+                "input[placeholder*='search']",
+                ".search-input",
+                "#search-input",
+                "input[type='search']",
+                ".searchInput",
+                "[data-testid*='search']"
+            ]
+            
+            search_box = None
+            for selector in search_box_selectors:
+                try:
+                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    if elements and elements[0].is_displayed():
+                        search_box = elements[0]
+                        self._debug_log(f"✅ 找到搜索框: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not search_box:
+                self._debug_log("❌ 未找到搜索框")
+                return False
+            
+            # 清空并输入关键词
+            search_box.clear()
+            search_box.send_keys(keyword)
+            time.sleep(2)
+            
+            # 尝试提交搜索
+            from selenium.webdriver.common.keys import Keys
+            search_box.send_keys(Keys.ENTER)
+            time.sleep(5)
+            
+            # 检查是否成功跳转到搜索结果页面
+            current_url = self.driver.current_url
+            if 'search_result' in current_url or 'keyword=' in current_url:
+                self._debug_log("✅ 搜索框搜索成功")
+                return True
+            else:
+                self._debug_log(f"❌ 搜索框搜索失败，当前URL: {current_url}")
+                return False
+                
+        except Exception as e:
+            self._debug_log(f"❌ 搜索框搜索出错: {str(e)}")
+            return False
+
+    def _try_construct_new_search_url(self, keyword):
+        """尝试构造新的搜索URL"""
+        try:
+            from urllib.parse import quote
+            
+            self._debug_log(f"🔧 尝试构造新搜索URL: {keyword}")
+            
+            encoded_keyword = quote(keyword)
+            new_search_urls = [
+                f"https://www.xiaohongshu.com/search_result?keyword={encoded_keyword}&source=web_search&type=comprehensive",
+                f"https://www.xiaohongshu.com/search_result?keyword={encoded_keyword}&source=web_search",
+                f"https://www.xiaohongshu.com/search_result?keyword={encoded_keyword}"
+            ]
+            
+            for url in new_search_urls:
+                try:
+                    self._debug_log(f"🔗 尝试URL: {url}")
+                    self.driver.get(url)
+                    time.sleep(5)
+                    
+                    current_url = self.driver.current_url
+                    if 'search_result' in current_url or 'keyword=' in current_url:
+                        self._debug_log(f"✅ 新URL构造成功")
+                        return True
+                        
+                except Exception as e:
+                    self._debug_log(f"❌ URL {url} 失败: {str(e)}")
+                    continue
+            
+            return False
+            
+        except Exception as e:
+            self._debug_log(f"❌ 构造新搜索URL出错: {str(e)}")
+            return False
+
+    def _try_final_search_recovery(self, keyword):
+        """最终搜索页面恢复尝试 - 当所有其他方法都失败时使用"""
+        try:
+            self._debug_log(f"🚨 启动最终搜索恢复程序：{keyword}")
+            
+            # 尝试多种恢复策略
+            recovery_strategies = [
+                self._recovery_direct_navigation,
+                self._recovery_via_homepage_search,
+                self._recovery_via_explore_page,
+                self._recovery_refresh_and_retry
+            ]
+            
+            for i, strategy in enumerate(recovery_strategies):
+                try:
+                    self._debug_log(f"🔄 执行恢复策略 {i+1}: {strategy.__name__}")
+                    if strategy(keyword):
+                        self._debug_log(f"✅ 恢复策略 {i+1} 成功")
+                        return True
+                    else:
+                        self._debug_log(f"❌ 恢复策略 {i+1} 失败")
+                except Exception as e:
+                    self._debug_log(f"❌ 恢复策略 {i+1} 出错: {str(e)}")
+                    continue
+            
+            self._debug_log("❌ 所有恢复策略都失败")
+            return False
+            
+        except Exception as e:
+            self._debug_log(f"❌ 最终搜索恢复出错: {str(e)}")
+            return False
+
+    def _recovery_direct_navigation(self, keyword):
+        """恢复策略1：直接导航到搜索URL"""
+        try:
+            from urllib.parse import quote
+            encoded_keyword = quote(keyword)
+            direct_url = f"https://www.xiaohongshu.com/search_result?keyword={encoded_keyword}&source=web_search&type=comprehensive"
+            
+            self.driver.get(direct_url)
+            time.sleep(6)
+            
+            current_url = self.driver.current_url
+            page_source = self.driver.page_source
+            
+            return ('search_result' in current_url or 'keyword=' in current_url) and self._verify_search_page_strict(page_source, keyword)
+            
+        except Exception as e:
+            self._debug_log(f"直接导航恢复失败: {str(e)}")
+            return False
+
+    def _recovery_via_homepage_search(self, keyword):
+        """恢复策略2：通过首页搜索框"""
+        try:
+            # 导航到首页
+            self.driver.get("https://www.xiaohongshu.com")
+            time.sleep(4)
+            
+            # 查找并使用搜索框
+            search_selectors = [
+                "input[placeholder*='搜索']",
+                "input[placeholder*='发现好生活']", 
+                ".search-input",
+                "#search-input",
+                "input[type='search']",
+                "[data-testid*='search']"
+            ]
+            
+            for selector in search_selectors:
+                try:
+                    search_box = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    if search_box.is_displayed():
+                        search_box.clear()
+                        search_box.send_keys(keyword)
+                        
+                        from selenium.webdriver.common.keys import Keys
+                        search_box.send_keys(Keys.ENTER)
+                        time.sleep(6)
+                        
+                        current_url = self.driver.current_url
+                        page_source = self.driver.page_source
+                        
+                        if ('search_result' in current_url or 'keyword=' in current_url) and self._verify_search_page_strict(page_source, keyword):
+                            return True
+                        break
+                except:
+                    continue
+            
+            return False
+            
+        except Exception as e:
+            self._debug_log(f"首页搜索恢复失败: {str(e)}")
+            return False
+
+    def _recovery_via_explore_page(self, keyword):
+        """恢复策略3：通过探索页面"""
+        try:
+            # 尝试访问探索页面
+            explore_urls = [
+                "https://www.xiaohongshu.com/explore",
+                "https://www.xiaohongshu.com/discovery"
+            ]
+            
+            for explore_url in explore_urls:
+                try:
+                    self.driver.get(explore_url)
+                    time.sleep(4)
+                    
+                    # 在探索页面查找搜索功能
+                    search_elements = self.driver.find_elements(By.CSS_SELECTOR, "input[placeholder*='搜索']")
+                    if search_elements:
+                        search_box = search_elements[0]
+                        search_box.clear()
+                        search_box.send_keys(keyword)
+                        
+                        from selenium.webdriver.common.keys import Keys
+                        search_box.send_keys(Keys.ENTER)
+                        time.sleep(6)
+                        
+                        current_url = self.driver.current_url
+                        page_source = self.driver.page_source
+                        
+                        if ('search_result' in current_url or 'keyword=' in current_url) and self._verify_search_page_strict(page_source, keyword):
+                            return True
+                except:
+                    continue
+            
+            return False
+            
+        except Exception as e:
+            self._debug_log(f"探索页面恢复失败: {str(e)}")
+            return False
+
+    def _recovery_refresh_and_retry(self, keyword):
+        """恢复策略4：刷新页面并重试"""
+        try:
+            self._debug_log("🔄 执行页面刷新重试策略")
+            
+            # 刷新当前页面
+            self.driver.refresh()
+            time.sleep(5)
+            
+            # 检查刷新后是否回到搜索页面
+            current_url = self.driver.current_url
+            page_source = self.driver.page_source
+            
+            if ('search_result' in current_url or 'keyword=' in current_url) and self._verify_search_page_strict(page_source, keyword):
+                return True
+            
+            # 如果刷新无效，重新构造搜索URL
+            from urllib.parse import quote
+            encoded_keyword = quote(keyword)
+            retry_url = f"https://www.xiaohongshu.com/search_result?keyword={encoded_keyword}"
+            
+            self.driver.get(retry_url)
+            time.sleep(6)
+            
+            final_url = self.driver.current_url
+            final_page_source = self.driver.page_source
+            
+            return ('search_result' in final_url or 'keyword=' in final_url) and self._verify_search_page_strict(final_page_source, keyword)
+            
+        except Exception as e:
+            self._debug_log(f"刷新重试恢复失败: {str(e)}")
+            return False
+
     def _handle_captcha_verification(self):
         """处理验证码 - 人工辅助验证（改进版）"""
         try:
@@ -1694,12 +2108,18 @@ ${{window.currentGeneratedNote.suggestions}}`;
                 self._debug_log("ℹ️ 缓存中无数据，进行实时搜索")
 
         try:
-            # 尝试多种搜索URL格式
+            # 🔧 修复：关键词URL编码和搜索URL格式
+            encoded_keyword = quote(keyword)  # 正确编码关键词
+            
+            # 尝试多种搜索URL格式 - 修正type参数
             search_urls = [
-                f"https://www.xiaohongshu.com/search_result?keyword={keyword}&source=web_search&type=com"
+                f"https://www.xiaohongshu.com/search_result?keyword={encoded_keyword}&source=web_search&type=comprehensive",
+                f"https://www.xiaohongshu.com/search_result?keyword={encoded_keyword}&source=web_search&type=note",
+                f"https://www.xiaohongshu.com/search_result?keyword={encoded_keyword}&source=web_search"
             ]
             
             self._debug_log(f"🌐 准备了 {len(search_urls)} 个搜索URL")
+            self._debug_log(f"🔍 原始关键词: '{keyword}' -> 编码后: '{encoded_keyword}'")
             
             # 确保WebDriver已初始化
             self._debug_log("🚀 初始化浏览器...")
@@ -1713,23 +2133,45 @@ ${{window.currentGeneratedNote.suggestions}}`;
             search_success = False
             for i, search_url in enumerate(search_urls):
                 try:
-                    self._debug_log(f"🔗 尝试搜索URL {i+1}/{len(search_urls)}: {search_url[:80]}...")
+                    self._debug_log(f"🔗 尝试搜索URL {i+1}/{len(search_urls)}: {search_url}")
                     
                     # 访问搜索页面
                     self.driver.get(search_url)
                     
                     # 等待页面加载
                     self._debug_log("⏳ 等待页面加载...")
-                    time.sleep(3)
+                    time.sleep(5)  # 增加等待时间确保页面完全加载
                     
-                    # 检查页面是否包含搜索关键词
+                    # 🔧 修复：更严格的页面验证
                     page_source = self.driver.page_source
-                    if self._verify_search_page(page_source, keyword):
-                        self._debug_log(f"✅ 搜索URL成功: {search_url[:60]}...")
+                    if self._verify_search_page_strict(page_source, keyword):
+                        self._debug_log(f"✅ 搜索URL验证成功: {search_url[:70]}...")
                         search_success = True
                         break
                     else:
-                        self._debug_log(f"⚠️ 搜索URL返回非搜索结果页面，尝试下一个")
+                        self._debug_log(f"⚠️ 搜索URL验证失败，可能不是搜索结果页面")
+                        
+                        # 🔧 新增：如果检测到推荐页面，立即尝试强制返回搜索
+                        current_url = self.driver.current_url
+                        if self._is_recommendation_page(page_source, current_url):
+                            self._debug_log(f"🚨 检测到推荐页面，立即尝试强制返回搜索页面")
+                            if self._force_return_to_search(search_url):
+                                self._debug_log(f"✅ 成功强制返回搜索页面")
+                                # 重新验证页面
+                                final_page_source = self.driver.page_source
+                                if self._verify_search_page_strict(final_page_source, keyword):
+                                    self._debug_log(f"✅ 强制返回后验证成功")
+                                    search_success = True
+                                    break
+                                else:
+                                    self._debug_log(f"❌ 强制返回后仍然验证失败")
+                            else:
+                                self._debug_log(f"❌ 强制返回搜索页面失败")
+                        
+                        # 保存失败页面用于调试
+                        if self.crawl_config.get('enable_detailed_logs', True):
+                            failed_page_path = self._save_page_source(page_source, f"failed_{keyword}_url{i+1}")
+                            self._debug_log(f"📁 失败页面已保存: {failed_page_path}")
                         continue
                         
                 except Exception as e:
@@ -1747,6 +2189,18 @@ ${{window.currentGeneratedNote.suggestions}}`;
                 return []
             
             self._debug_log("✅ 反爬虫检测通过")
+            
+            # 🔧 新增：最终确认是否仍在搜索页面
+            final_url = self.driver.current_url
+            final_page_source = self.driver.page_source
+            
+            if not self._verify_search_page_strict(final_page_source, keyword):
+                self._debug_log("⚠️ 反爬虫处理后仍未在正确的搜索页面，尝试最后一次强制跳转")
+                # 最后一次尝试强制返回搜索
+                if self._try_final_search_recovery(keyword):
+                    self._debug_log("✅ 最终搜索页面恢复成功")
+                else:
+                    self._debug_log("❌ 最终搜索页面恢复失败，但继续尝试提取", "WARNING")
             
             # 等待内容完全加载 - 但不管结果如何都继续执行
             self._debug_log("📄 等待页面内容完全加载...")
@@ -1864,29 +2318,136 @@ ${{window.currentGeneratedNote.suggestions}}`;
             logger.error(f"验证搜索页面时出错: {str(e)}")
             return False
 
+    def _verify_search_page_strict(self, page_source, keyword):
+        """🔧 更严格的页面验证 - 确保是真正的搜索结果页面"""
+        try:
+            self._debug_log(f"🔍 开始严格验证页面是否为关键词 '{keyword}' 的搜索结果")
+            
+            # 1. 首先检查是否为推荐页面（排除误判）
+            if "homefeed_recommend" in page_source or "首页推荐" in page_source:
+                self._debug_log("❌ 检测到推荐页面标识，非搜索结果页面")
+                return False
+            
+            # 2. 检查URL参数中是否包含关键词
+            encoded_keyword = quote(keyword)
+            url_indicators = [
+                f"keyword={keyword}",
+                f"keyword={encoded_keyword}",
+                f"searchValue={keyword}",
+                f"query={keyword}"
+            ]
+            
+            url_match = any(indicator in page_source for indicator in url_indicators)
+            if url_match:
+                self._debug_log("✅ URL参数中发现关键词，确认为搜索页面")
+                return True
+            
+            # 3. 检查页面内容中的关键词出现
+            keyword_indicators = [
+                f'"{keyword}"',  # JSON中的关键词
+                f"'{keyword}'",  # JavaScript中的关键词
+                f'搜索"{keyword}"',  # 搜索提示文本
+                f"keyword:{keyword}",  # 配置对象中的关键词
+            ]
+            
+            content_match = any(indicator in page_source for indicator in keyword_indicators)
+            
+            # 4. 检查搜索相关的页面元素
+            search_elements = [
+                "search_result",
+                "searchResult", 
+                "搜索结果",
+                "noteList",
+                "feeds-page"
+            ]
+            
+            element_match = any(element in page_source for element in search_elements)
+            
+            # 5. 综合判断
+            if content_match and element_match:
+                self._debug_log("✅ 内容和元素都匹配，确认为搜索结果页面")
+                return True
+            elif content_match:
+                self._debug_log("⚠️ 仅内容匹配，可能为搜索页面")
+                return True
+            else:
+                self._debug_log("❌ 关键词和搜索元素都未匹配，非搜索结果页面")
+                
+                # 输出调试信息
+                if self.crawl_config.get('enable_detailed_logs', True):
+                    self._debug_log(f"🔍 页面内容预览: {page_source[:500]}...")
+                
+                return False
+            
+        except Exception as e:
+            logger.error(f"验证搜索页面时出错: {str(e)}")
+            return False
+
     def _validate_search_results(self, results, keyword):
-        """验证搜索结果是否与关键词相关 - 根据配置调整严格程度"""
+        """🔧 修复：验证搜索结果是否与关键词相关 - 强制执行严格验证"""
         if not results or not keyword:
             return results
             
         try:
             validation_level = self.crawl_config.get('validation_strict_level', 'medium')
             
-            # 根据严格程度决定验证策略
+            self._debug_log(f"🔍 开始验证 {len(results)} 条搜索结果与关键词 '{keyword}' 的相关性")
+            self._debug_log(f"📊 当前验证严格度: {validation_level}")
+            
+            # 🔧 修复：即使是低严格度，也要进行基本的关键词匹配验证
             if validation_level == 'low':
-                # 低严格度：只要是从搜索页面获得的结果就认为是相关的
-                logger.info(f"使用低严格度验证: 接受所有 {len(results)} 条结果")
-                return results
+                # 低严格度：基本关键词匹配
+                validated_results = self._basic_validate(results, keyword)
+                self._debug_log(f"✅ 低严格度验证完成: {len(results)} -> {len(validated_results)} 条相关结果")
+                return validated_results
             elif validation_level == 'high':
                 # 高严格度：必须包含完整关键词
-                return self._strict_validate(results, keyword)
+                validated_results = self._strict_validate(results, keyword)
+                self._debug_log(f"✅ 高严格度验证完成: {len(results)} -> {len(validated_results)} 条相关结果")
+                return validated_results
             else:
                 # 中等严格度：使用灵活的匹配策略
-                return self._flexible_validate(results, keyword)
+                validated_results = self._flexible_validate(results, keyword)
+                self._debug_log(f"✅ 中等严格度验证完成: {len(results)} -> {len(validated_results)} 条相关结果")
+                return validated_results
                 
         except Exception as e:
             logger.error(f"验证搜索结果时出错: {str(e)}")
             return results
+    
+    def _basic_validate(self, results, keyword):
+        """🔧 新增：低严格度验证 - 基本关键词匹配"""
+        validated_results = []
+        keyword_lower = keyword.lower()
+        keyword_words = keyword_lower.split()
+        
+        for result in results:
+            title = result.get('title', '').lower()
+            description = result.get('desc', '').lower()
+            author = result.get('author', '').lower()
+            tags = ' '.join(result.get('tags', [])).lower() if result.get('tags') else ''
+            
+            # 组合所有文本进行匹配
+            all_text = f"{title} {description} {author} {tags}"
+            
+            # 基本匹配策略
+            is_relevant = any([
+                # 至少包含一个关键词的词
+                any(word in all_text for word in keyword_words),
+                # 如果有完整标题和描述，且有互动数据，认为可能相关
+                (len(title.strip()) > 5 and len(description.strip()) > 10 and 
+                 (result.get('likes', 0) > 0 or result.get('comments', 0) > 0))
+            ])
+            
+            if is_relevant:
+                validated_results.append(result)
+                if self.crawl_config.get('enable_detailed_logs', True):
+                    self._debug_log(f"📝 基本验证通过: {title[:30]}...")
+            else:
+                if self.crawl_config.get('enable_detailed_logs', True):
+                    self._debug_log(f"❌ 基本验证失败: {title[:30]}...")
+        
+        return validated_results
     
     def _strict_validate(self, results, keyword):
         """高严格度验证"""
@@ -2025,6 +2586,29 @@ ${{window.currentGeneratedNote.suggestions}}`;
             else:
                 logger.info("策略3: 已禁用，跳过")
                 strategies_executed.append("策略3: 已禁用")
+                
+            # 策略4: 精准容器提取 - 新增的最强策略
+            if self.crawl_config.get('enable_strategy_4', True):
+                try:
+                    logger.info("==================== 执行策略4: 精准容器提取 ====================")
+                    remaining_needed = max_results - len(all_results)
+                    if remaining_needed > 0:
+                        results_4 = self._extract_by_precise_containers(remaining_needed)
+                        if results_4:
+                            all_results.extend(results_4)
+                            logger.info(f"✅ 策略4(精准容器): 成功提取到 {len(results_4)} 条结果")
+                        else:
+                            logger.warning("❌ 策略4(精准容器): 未提取到结果")
+                        strategies_executed.append(f"策略4: {len(results_4) if results_4 else 0}条")
+                    else:
+                        logger.info("策略4: 已达到目标结果数，跳过")
+                        strategies_executed.append("策略4: 跳过")
+                except Exception as e:
+                    logger.error(f"❌ 策略4(精准容器)执行失败: {str(e)}")
+                    strategies_executed.append("策略4: 执行失败")
+            else:
+                logger.info("策略4: 已禁用，跳过")
+                strategies_executed.append("策略4: 已禁用")
             
             # 总结策略执行情况
             logger.info(f"==================== 策略执行总结 ====================")
@@ -2049,7 +2633,7 @@ ${{window.currentGeneratedNote.suggestions}}`;
             # 限制结果数量
             final_results = unique_results[:max_results]
             logger.info(f"最终返回结果数: {len(final_results)}")
-            logger.info(f"==================== 三种策略执行完成 ====================")
+            logger.info(f"==================== 四种策略执行完成 ====================")
             
             return final_results
             
@@ -3327,6 +3911,264 @@ ${{window.currentGeneratedNote.suggestions}}`;
         if self.driver:
             self.driver.quit()
             logger.info("Selenium已关闭")
+
+    def _extract_by_precise_containers(self, max_results):
+        """策略4: 精准容器提取 - 基于HTML结构的最精准匹配"""
+        results = []
+        
+        try:
+            from bs4 import BeautifulSoup
+            import re
+            
+            # 获取当前页面的HTML源码
+            page_source = self.driver.page_source
+            soup = BeautifulSoup(page_source, 'html.parser')
+            logger.info(f"精准容器提取: 页面HTML大小 {len(page_source)} 字符")
+            
+            # 第一步：查找所有explore链接及其容器
+            explore_links = soup.find_all('a', href=re.compile(r'/explore/'))
+            logger.info(f"精准容器提取: 找到 {len(explore_links)} 个explore链接")
+            
+            note_containers = []
+            processed_ids = set()
+            
+            for link in explore_links:
+                if len(note_containers) >= max_results:
+                    break
+                    
+                href = link.get('href', '')
+                note_id_match = re.search(r'/explore/([a-f0-9]{24})', href)
+                
+                if note_id_match:
+                    note_id = note_id_match.group(1)
+                    
+                    if note_id in processed_ids:
+                        continue
+                    processed_ids.add(note_id)
+                    
+                    # 查找包含此链接的最佳容器
+                    container = self._find_best_container(link)
+                    
+                    note_containers.append({
+                        'note_id': note_id,
+                        'link_href': href,
+                        'container': container,
+                        'link_element': link
+                    })
+            
+            logger.info(f"精准容器提取: 找到 {len(note_containers)} 个有效笔记容器")
+            
+            # 第二步：从每个容器精准提取信息
+            for i, container_info in enumerate(note_containers):
+                try:
+                    note_id = container_info['note_id']
+                    container = container_info['container']
+                    href = container_info['link_href']
+                    
+                    logger.debug(f"精准提取笔记 {i+1}: {note_id}")
+                    
+                    # 提取图片URLs
+                    images = self._extract_container_images(container)
+                    
+                    # 提取标题
+                    title = self._extract_container_title(container, note_id, i)
+                    
+                    # 提取作者信息
+                    author = self._extract_container_author(container)
+                    
+                    # 提取文本内容
+                    content = self._extract_container_content(container)
+                    
+                    # 提取互动数据
+                    engagement = self._extract_container_engagement(container)
+                    
+                    # 构建完整链接
+                    full_link = f"https://www.xiaohongshu.com{href}"
+                    
+                    # 构建结果对象
+                    note_data = {
+                        'note_id': note_id,
+                        'title': title,
+                        'content': content,
+                        'author': author,
+                        'link': full_link,
+                        'cover_image': images[0] if images else '',
+                        'images': images,
+                        'like_count': engagement.get('likes', '0'),
+                        'comment_count': engagement.get('comments', '0'),
+                        'collect_count': engagement.get('collects', '0'),
+                        'tags': ['小红书搜索'],
+                        'method': 'precise_containers'
+                    }
+                    
+                    results.append(note_data)
+                    logger.debug(f"精准提取完成: {title[:30]}...")
+                    
+                except Exception as e:
+                    logger.debug(f"处理笔记容器 {i+1} 时出错: {str(e)}")
+                    continue
+            
+            logger.info(f"精准容器提取完成: 成功提取 {len(results)} 条笔记")
+            return results
+            
+        except Exception as e:
+            logger.error(f"精准容器提取失败: {str(e)}")
+            return []
+    
+    def _find_best_container(self, link_element):
+        """查找包含链接的最佳容器"""
+        try:
+            # 向上查找最多5层，寻找包含图片的容器
+            container = link_element
+            
+            for _ in range(5):
+                parent = container.parent
+                if parent:
+                    # 检查是否包含图片
+                    images = parent.find_all('img')
+                    if images and len(images) >= 1:
+                        # 检查容器的文本长度，避免过大的容器
+                        text_content = parent.get_text(strip=True)
+                        if len(text_content) < 500:  # 限制容器大小
+                            container = parent
+                        else:
+                            break
+                    else:
+                        container = parent
+                else:
+                    break
+            
+            return container
+            
+        except Exception:
+            return link_element
+    
+    def _extract_container_images(self, container):
+        """从容器中提取图片URLs"""
+        images = []
+        
+        try:
+            img_elements = container.find_all('img')
+            
+            for img in img_elements:
+                src = img.get('src', '')
+                
+                if 'xhscdn.com' in src:
+                    # 确保图片URL完整
+                    if src.startswith('//'):
+                        src = 'https:' + src
+                    elif src.startswith('/'):
+                        src = 'https://www.xiaohongshu.com' + src
+                    
+                    if src not in images:
+                        images.append(src)
+            
+            return images[:3]  # 最多返回3张图片
+            
+        except Exception as e:
+            logger.debug(f"提取容器图片失败: {str(e)}")
+            return []
+    
+    def _extract_container_title(self, container, note_id, index):
+        """从容器中提取标题"""
+        try:
+            # 获取容器的文本内容
+            text_content = container.get_text(separator=' ', strip=True)
+            
+            # 清理文本，移除数字和特殊字符
+            import re
+            
+            # 查找包含关键词的片段作为标题
+            lines = text_content.split()
+            potential_titles = []
+            
+            for line in lines:
+                # 过滤掉纯数字、单个字符等
+                if len(line) > 3 and not line.isdigit():
+                    # 移除特殊字符，保留中文、英文和基本标点
+                    cleaned = re.sub(r'[^\w\u4e00-\u9fff\s！？，。、]', '', line).strip()
+                    if len(cleaned) > 5 and len(cleaned) < 50:
+                        potential_titles.append(cleaned)
+            
+            # 选择最佳标题
+            if potential_titles:
+                # 优先选择包含更多中文字符的标题
+                potential_titles.sort(key=lambda x: len(re.findall(r'[\u4e00-\u9fff]', x)), reverse=True)
+                return potential_titles[0]
+            
+            # 如果没有找到合适的标题，使用默认格式
+            return f"小红书笔记 #{index+1}"
+            
+        except Exception as e:
+            logger.debug(f"提取容器标题失败: {str(e)}")
+            return f"小红书笔记 #{index+1}"
+    
+    def _extract_container_author(self, container):
+        """从容器中提取作者信息"""
+        try:
+            text_content = container.get_text(separator=' ', strip=True)
+            
+            # 查找可能的作者标识
+            import re
+            author_patterns = [
+                r'@([^\s<>]{2,20})',
+                r'作者[：:]\s*([^\s<>]{2,20})',
+                r'by\s+([^\s<>]{2,20})'
+            ]
+            
+            for pattern in author_patterns:
+                author_match = re.search(pattern, text_content)
+                if author_match:
+                    return author_match.group(1)
+            
+            return "未知作者"
+            
+        except Exception:
+            return "未知作者"
+    
+    def _extract_container_content(self, container):
+        """从容器中提取内容描述"""
+        try:
+            text_content = container.get_text(separator=' ', strip=True)
+            
+            # 限制内容长度
+            if len(text_content) > 100:
+                return text_content[:100] + "..."
+            
+            return text_content or "内容加载中..."
+            
+        except Exception:
+            return "内容加载中..."
+    
+    def _extract_container_engagement(self, container):
+        """从容器中提取互动数据"""
+        try:
+            text_content = container.get_text(separator=' ', strip=True)
+            
+            # 查找数字，可能代表互动数据
+            import re
+            numbers = re.findall(r'\d+', text_content)
+            
+            # 简单的启发式分配
+            engagement = {
+                'likes': '0',
+                'comments': '0', 
+                'collects': '0'
+            }
+            
+            if numbers:
+                # 将找到的数字分配给不同的互动类型
+                if len(numbers) >= 1:
+                    engagement['likes'] = numbers[0]
+                if len(numbers) >= 2:
+                    engagement['comments'] = numbers[1]
+                if len(numbers) >= 3:
+                    engagement['collects'] = numbers[2]
+            
+            return engagement
+            
+        except Exception:
+            return {'likes': '0', 'comments': '0', 'collects': '0'}
 
 # 示例代码
 if __name__ == "__main__":
