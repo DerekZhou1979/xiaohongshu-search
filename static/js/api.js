@@ -14,7 +14,7 @@
 const API_BASE_URL = 'http://localhost:8080/api';
 
 // 请求超时时间（毫秒）
-const REQUEST_TIMEOUT = 60000; // 60秒
+// const REQUEST_TIMEOUT = 60000; // 60秒
 
 // 默认热门关键词（后端API失败时的备用数据）
 const DEFAULT_KEYWORDS = ['口红', '护肤品', '连衣裙', '耳机', '咖啡', '旅行'];
@@ -50,23 +50,13 @@ async function getRedBookNotes(keyword, options = {}) {
             session_id: sessionId
         });
         
-        // 创建请求控制器（用于超时控制）
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => {
-            controller.abort();
-        }, REQUEST_TIMEOUT);
-        
-        // 发送请求
+        // 发送请求（不再设置超时）
         const response = await fetch(`${API_BASE_URL}/search?${params}`, {
             method: 'GET',
-            signal: controller.signal,
             headers: {
                 'Content-Type': 'application/json'
             }
         });
-        
-        // 清除超时定时器
-        clearTimeout(timeoutId);
         
         // 检查响应状态
         if (!response.ok) {
@@ -88,9 +78,7 @@ async function getRedBookNotes(keyword, options = {}) {
         
     } catch (error) {
         // 统一错误处理
-        if (error.name === 'AbortError') {
-            throw new Error('搜索请求超时，请重试');
-        } else if (error.message.includes('Failed to fetch')) {
+        if (error.message && error.message.includes('Failed to fetch')) {
             throw new Error('网络连接失败，请检查网络状态');
         } else {
             console.error('搜索API错误:', error);
@@ -300,7 +288,84 @@ async function performUnifiedExtraction(options = {}) {
     }
 }
 
+/**
+ * 获取智能搜索配置
+ * 
+ * @returns {Promise<Object>} 智能搜索配置对象
+ */
+async function getIntelligentSearchConfig() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/config/intelligent-search`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            console.log('📋 使用默认智能搜索配置');
+            return {
+                enable_cache_search: false,
+                enable_html_extraction: true,
+                enable_realtime_search: false,
+                wait_for_html_save: true,
+                html_save_timeout: 30,
+                extraction_timeout: 60
+            };
+        }
+        
+        const data = await response.json();
+        return data.config || {
+            enable_cache_search: false,
+            enable_html_extraction: true,
+            enable_realtime_search: false,
+            wait_for_html_save: true,
+            html_save_timeout: 30,
+            extraction_timeout: 60
+        };
+        
+    } catch (error) {
+        console.log('📋 使用默认智能搜索配置 (API调用失败)');
+        return {
+            enable_cache_search: false,
+            enable_html_extraction: true,
+            enable_realtime_search: false,
+            wait_for_html_save: true,
+            html_save_timeout: 30,
+            extraction_timeout: 60
+        };
+    }
+}
+
+/**
+ * 🆕 获取HTML生成状态
+ * 
+ * @param {string} htmlHash - HTML内容的MD5哈希值
+ * @returns {Promise<Object>} HTML状态对象
+ */
+async function getHtmlStatus(htmlHash) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/html-status/${htmlHash}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`获取HTML状态失败: HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+        
+    } catch (error) {
+        console.error('HTML状态查询API错误:', error);
+        throw error;
+    }
+}
+
 // ==================== 导出（如果需要模块化） ====================
 
 // 如果在支持ES6模块的环境中，可以取消注释以下行
-// export { getRedBookNotes, getNoteDetail, getHotKeywords, checkApiHealth, performUnifiedExtraction }; 
+// export { getRedBookNotes, getNoteDetail, getHotKeywords, checkApiHealth, performUnifiedExtraction, getIntelligentSearchConfig }; 

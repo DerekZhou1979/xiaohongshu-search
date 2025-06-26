@@ -310,7 +310,10 @@ class BackendXHSCrawler:
             chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
             chrome_options.add_argument('--window-size=1920,1080')
             
-            # 尝试不同的ChromeDriver路径
+            # 智能选择ChromeDriver
+            service = None
+            
+            # 1. 尝试使用本地ChromeDriver
             driver_paths = [
                 'drivers/chromedriver-mac-arm64/chromedriver',
                 'drivers/chromedriver',
@@ -318,32 +321,37 @@ class BackendXHSCrawler:
                 '/opt/homebrew/bin/chromedriver'
             ]
             
-            # 尝试使用指定路径的ChromeDriver
             for driver_path in driver_paths:
                 if os.path.exists(driver_path):
                     try:
                         service = Service(executable_path=driver_path)
                         driver = webdriver.Chrome(service=service, options=chrome_options)
+                        logger.debug(f"使用本地ChromeDriver: {driver_path}")
                         return driver
                     except Exception as e:
                         logger.debug(f"使用路径 {driver_path} 创建驱动失败: {str(e)}")
                         continue
             
-            # 如果没有找到指定路径，尝试系统PATH中的chromedriver
+            # 2. 使用webdriver-manager自动下载（优先级提高）
+            try:
+                from webdriver_manager.chrome import ChromeDriverManager
+                # 使用中国镜像源加速下载
+                os.environ['WDM_LOCAL'] = '1'  # 本地存储
+                driver_path = ChromeDriverManager().install()
+                service = Service(driver_path)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+                logger.debug(f"使用webdriver-manager下载的ChromeDriver: {driver_path}")
+                return driver
+            except Exception as e:
+                logger.debug(f"webdriver-manager下载失败: {str(e)}")
+            
+            # 3. 最后尝试系统PATH中的chromedriver
             try:
                 driver = webdriver.Chrome(options=chrome_options)
+                logger.debug("使用系统PATH中的chromedriver")
                 return driver
             except Exception as e:
                 logger.debug(f"使用系统PATH中的chromedriver失败: {str(e)}")
-                
-                # 最后尝试使用ChromeDriverManager自动下载
-                try:
-                    from webdriver_manager.chrome import ChromeDriverManager
-                    service = Service(ChromeDriverManager().install())
-                    driver = webdriver.Chrome(service=service, options=chrome_options)
-                    return driver
-                except Exception as e:
-                    logger.debug(f"使用ChromeDriverManager失败: {str(e)}")
             
             return None
             

@@ -262,6 +262,22 @@ def search():
         if hasattr(crawler, 'set_debug_callback'):
             crawler.set_debug_callback(debug_callback)
         
+        # 🔧 修复1：记录HTML生成状态的标志
+        html_generation_started = False
+        html_hash = hashlib.md5(keyword.encode()).hexdigest()
+        
+        # 设置HTML生成状态追踪回调
+        def html_status_callback(hash_key, html_content):
+            nonlocal html_generation_started
+            html_generation_started = True
+            debug_manager.store_debug_info(session_id, f"📄 HTML结果页面生成完成: {hash_key}", "INFO")
+            # 调用原始的存储回调
+            store_html_result(hash_key, html_content)
+        
+        # 设置增强的HTML回调
+        if hasattr(crawler, 'set_html_callback'):
+            crawler.set_html_callback(html_status_callback)
+        
         # 执行搜索
         debug_manager.store_debug_info(session_id, "🚀 正在执行搜索...", "INFO")
         search_results = crawler.search(keyword, max_results=max_results, use_cache=use_cache)
@@ -287,10 +303,28 @@ def search():
             except Exception as cache_error:
                 logger.error(f"从缓存恢复失败: {cache_error}")
         
+        # 🔧 修复2：等待HTML生成完成（如果有数据的话）
+        html_ready = False
+        if search_results and len(search_results) > 0:
+            # 等待HTML生成（最多10秒）
+            debug_manager.store_debug_info(session_id, "⏳ 等待HTML页面生成...", "INFO")
+            wait_start = time.time()
+            max_wait = 10  # 最大等待10秒
+            
+            while time.time() - wait_start < max_wait:
+                if html_generation_started or html_hash in html_results_cache:
+                    html_ready = True
+                    debug_manager.store_debug_info(session_id, "✅ HTML页面生成完成", "INFO")
+                    break
+                time.sleep(0.5)  # 每500ms检查一次
+            
+            if not html_ready:
+                debug_manager.store_debug_info(session_id, "⚠️ HTML页面生成超时，但搜索数据有效", "WARNING")
+        
         # 根据配置决定是否启动后台爬虫提取详细内容
         if search_results and len(search_results) > 0:
             # 获取配置（从环境变量或配置文件）
-            enable_backend_extraction = os.environ.get('ENABLE_BACKEND_EXTRACTION', 'true').lower() == 'true'
+            enable_backend_extraction = os.environ.get('ENABLE_BACKEND_EXTRACTION', 'false').lower() == 'true'
             
             if enable_backend_extraction:
                 debug_manager.store_debug_info(session_id, "🔍 启动后台爬虫提取笔记详细内容...", "INFO")
@@ -310,28 +344,35 @@ def search():
         
         debug_manager.store_debug_info(session_id, f"✅ 搜索完成，找到 {len(notes)} 条笔记", "INFO")
         
-        # 🔧 修复：只有在有有效笔记数据时才生成HTML URL
+        # 🔧 修复3：只有在有有效笔记数据且HTML确实生成时才返回HTML URL
         if notes and len(notes) > 0:
             # 验证笔记数据的有效性
             valid_notes = [note for note in notes if note.get('title') or note.get('desc')]
             
             if valid_notes:
-                # 生成HTML页面URL
-                html_hash = hashlib.md5(keyword.encode()).hexdigest()
-                html_url = f"/results/search_{html_hash}.html"           # 文件形式
-                html_api_url = f"/api/result-html/{html_hash}"           # API形式（推荐）
-                
-                debug_manager.store_debug_info(session_id, f"📄 生成HTML页面: {html_api_url}", "INFO")
-                
-                return jsonify({
+                # 构建响应数据
+                response_data = {
                     "keyword": keyword,
                     "session_id": session_id,
                     "timestamp": int(time.time()),
                     "count": len(valid_notes),
                     "notes": valid_notes,
-                    "html_url": html_url,
-                    "html_api_url": html_api_url
-                })
+                    "html_generation_status": "completed" if html_ready else "pending"
+                }
+                
+                # 🔧 修复：只有HTML确实准备好时才提供URL
+                if html_ready:
+                    html_url = f"/results/search_{html_hash}.html"           # 文件形式
+                    html_api_url = f"/api/result-html/{html_hash}"           # API形式（推荐）
+                    response_data["html_url"] = html_url
+                    response_data["html_api_url"] = html_api_url
+                    debug_manager.store_debug_info(session_id, f"📄 HTML页面已准备就绪: {html_api_url}", "INFO")
+                else:
+                    # 提供HTML状态查询端点
+                    response_data["html_status_url"] = f"/api/html-status/{html_hash}"
+                    debug_manager.store_debug_info(session_id, f"📄 HTML页面生成中，提供状态查询: {response_data['html_status_url']}", "INFO")
+                
+                return jsonify(response_data)
             else:
                 debug_manager.store_debug_info(session_id, "⚠️ 笔记数据无效，没有标题或描述", "WARNING")
         
@@ -343,6 +384,7 @@ def search():
             "timestamp": int(time.time()),
             "count": 0,
             "notes": [],
+            "html_generation_status": "no_data",
             "message": "未找到相关笔记"
         })
     except Exception as e:
@@ -413,6 +455,70 @@ def get_debug_info(session_id):
     """
     since = request.args.get('since', type=float, default=0)
     return jsonify(debug_manager.get_debug_info(session_id, since))
+
+@app.route('/api/html-status/<html_hash>')
+def get_html_status(html_hash):
+    """
+    获取HTML生成状态API
+    
+    参数:
+        html_hash: HTML内容的MD5哈希值
+    
+    返回:
+        JSON格式的HTML状态信息
+    """
+    global html_results_cache
+    
+    try:
+        # 检查内存缓存
+        if html_hash in html_results_cache:
+            html_url = f"/results/search_{html_hash}.html"           
+            html_api_url = f"/api/result-html/{html_hash}"           
+            return jsonify({
+                "status": "ready",
+                "html_url": html_url,
+                "html_api_url": html_api_url,
+                "message": "HTML页面已生成完成"
+            })
+        
+        # 检查文件系统
+        results_dir = os.path.join(get_project_root(), 'cache', 'results')
+        html_file = os.path.join(results_dir, f"search_{html_hash}.html")
+        
+        if os.path.exists(html_file):
+            # 文件存在，加载到内存缓存
+            try:
+                with open(html_file, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                html_results_cache[html_hash] = html_content
+                
+                html_url = f"/results/search_{html_hash}.html"           
+                html_api_url = f"/api/result-html/{html_hash}"           
+                return jsonify({
+                    "status": "ready",
+                    "html_url": html_url,
+                    "html_api_url": html_api_url,
+                    "message": "HTML页面已生成完成（从文件加载）"
+                })
+            except Exception as e:
+                logger.error(f"加载HTML文件到缓存失败: {str(e)}")
+                return jsonify({
+                    "status": "error",
+                    "message": f"HTML文件加载失败: {str(e)}"
+                }), 500
+        
+        # HTML还未生成
+        return jsonify({
+            "status": "pending",
+            "message": "HTML页面正在生成中..."
+        })
+        
+    except Exception as e:
+        logger.error(f"获取HTML状态失败: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"获取HTML状态失败: {str(e)}"
+        }), 500
 
 @app.route('/api/create-similar-note/<note_id>', methods=['POST'])
 def create_similar_note(note_id):
@@ -704,6 +810,55 @@ def unified_extract():
             'success': False,
             'error': str(e),
             'message': '统一数据提取失败'
+        }), 500
+
+@app.route('/api/config/intelligent-search')
+def get_intelligent_search_config():
+    """
+    获取智能搜索配置API
+    
+    返回:
+        JSON格式的智能搜索配置
+    """
+    try:
+        # 从环境变量获取配置
+        import os
+        import json
+        
+        config_str = os.environ.get('INTELLIGENT_SEARCH_CONFIG')
+        if config_str:
+            try:
+                config = json.loads(config_str)
+                logger.info(f"📋 返回智能搜索配置: {config}")
+                return jsonify({
+                    'success': True,
+                    'config': config
+                })
+            except json.JSONDecodeError:
+                pass
+        
+        # 默认配置
+        default_config = {
+            'enable_cache_search': False,
+            'enable_html_extraction': True,
+            'enable_realtime_search': False,
+            'wait_for_html_save': True,
+            'html_save_timeout': 30,
+            'extraction_timeout': 60
+        }
+        
+        logger.info(f"📋 返回默认智能搜索配置: {default_config}")
+        return jsonify({
+            'success': True,
+            'config': default_config
+        })
+        
+    except Exception as e:
+        logger.error(f"获取智能搜索配置失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': '获取智能搜索配置失败'
         }), 500
 
 # ==================== HTML结果页面路由 ====================

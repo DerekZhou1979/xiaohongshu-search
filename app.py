@@ -10,6 +10,7 @@ import sys
 import argparse
 import subprocess
 import time
+import shutil
 
 # 添加项目根目录到Python路径
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -39,6 +40,20 @@ SEARCH_CONFIG = {
     'PAGE_LOAD_TIMEOUT': 30,
     'MAX_RETRIES': 3,
     'RETRY_DELAY': 2
+}
+
+# ===========================================
+# 智能搜索策略配置
+# ===========================================
+
+INTELLIGENT_SEARCH_CONFIG = {
+    'enable_cache_search': False,      # 缓存搜索
+    'enable_html_extraction': True,   # HTML提取（默认开启）
+    'enable_realtime_search': False,  # 实时搜索
+    'search_sequence': ['html_extraction', 'cache_search', 'realtime_search'],  # 搜索顺序
+    'wait_for_html_save': True,       # 等待HTML保存完成
+    'html_save_timeout': 30,          # HTML保存超时时间（秒）
+    'extraction_timeout': 60,         # 单个策略超时时间（秒）
 }
 
 # ===========================================
@@ -82,7 +97,7 @@ DIRECTORIES = {
 # ===========================================
 
 FILE_PATHS = {
-    'CHROMEDRIVER_PATH': os.path.join(DIRECTORIES['DRIVERS_DIR'], 'chromedriver-mac-arm64', 'chromedriver'),
+    'CHROMEDRIVER_PATH': os.path.join(DIRECTORIES['DRIVERS_DIR'], 'chromedriver-local', 'chromedriver-mac-arm64', 'chromedriver'),
     'COOKIES_FILE': os.path.join(DIRECTORIES['COOKIES_DIR'], 'xiaohongshu_cookies.json')
 }
 
@@ -146,29 +161,29 @@ def show_config_menu():
     print("   - 启用所有策略")
     print("   - 关闭调试截图")
     print("   - 适中的验证严格度")
-    print("   - 启用后台笔记内容提取")
+    print("   - 智能搜索: 仅HTML提取")
     print("")
     print("2️⃣  调试模式")
     print("   - 启用所有策略")
     print("   - 开启详细截图")
     print("   - 保存所有调试信息")
-    print("   - 启用后台笔记内容提取")
+    print("   - 智能搜索: 缓存+HTML+实时")
     print("")
     print("3️⃣  快速模式")
     print("   - 仅启用策略1（最快）")
     print("   - 关闭截图和详细日志")
     print("   - 降低验证严格度")
-    print("   - 关闭后台笔记内容提取")
+    print("   - 智能搜索: 仅HTML提取")
     print("")
     print("4️⃣  双向模式")
     print("   - 启用所有策略")
     print("   - 关闭截图")
-    print("   - 最低验证严格度")
-    print("   - 启用后台笔记内容提取")
+    print("   - 中等验证严格度")
+    print("   - 智能搜索: 缓存+HTML+实时")
     print("")
     print("5️⃣  自定义模式")
     print("   - 手动配置各项功能")
-    print("   - 可选择后台笔记内容提取")
+    print("   - 可自定义智能搜索策略")
     print("")
     print("=" * 50)
     
@@ -194,21 +209,29 @@ def get_config_by_mode(mode):
             'enable_strategy_1': True,
             'enable_strategy_2': True, 
             'enable_strategy_3': True,
-            'validation_strict_level': 'medium',
-            'enable_detailed_logs': True,
+            'validation_strict_level': 'low',
+            'enable_detailed_logs': False,
             'screenshot_interval': 0,  # 不截图
             'enable_backend_extraction': False,  # 启用后台笔记提取
+            # 智能搜索配置
+            'enable_cache_search': False,
+            'enable_html_extraction': True,
+            'enable_realtime_search': False,
         },
         2: {  # 调试模式
             'name': '调试模式',
-            'enable_debug_screenshots': False,
+            'enable_debug_screenshots': True,
             'enable_strategy_1': True,
-            'enable_strategy_2': True,
-            'enable_strategy_3': True,
+            'enable_strategy_2': False,
+            'enable_strategy_3': False,
             'validation_strict_level': 'low',
             'enable_detailed_logs': True,
-            'screenshot_interval': 1,  # 每1秒截图
+            'screenshot_interval': 0.5,  # 每1秒截图
             'enable_backend_extraction': False,  # 启用后台笔记提取
+            # 智能搜索配置
+            'enable_cache_search': True,
+            'enable_html_extraction': True,
+            'enable_realtime_search': True,
         },
         3: {  # 快速模式
             'name': '快速模式',
@@ -220,6 +243,10 @@ def get_config_by_mode(mode):
             'enable_detailed_logs': False,
             'screenshot_interval': 0,
             'enable_backend_extraction': False,  # 关闭后台笔记提取（快速模式）
+            # 智能搜索配置
+            'enable_cache_search': False,
+            'enable_html_extraction': True,
+            'enable_realtime_search': False,
         },
         4: {  # 双向模式
             'name': '双向模式',
@@ -231,6 +258,10 @@ def get_config_by_mode(mode):
             'enable_detailed_logs': True,
             'screenshot_interval': 0,
             'enable_backend_extraction': True,  # 启用后台笔记提取
+            # 智能搜索配置
+            'enable_cache_search': True,
+            'enable_html_extraction': True,
+            'enable_realtime_search': True,
         },
         5: {  # 自定义模式
             'name': '自定义模式',
@@ -271,6 +302,12 @@ def get_custom_config():
     # 后台提取功能
     print("\n🔍 后台功能选择：")
     config['enable_backend_extraction'] = input("启用后台笔记内容提取任务？[Y/n]: ").lower() != 'n'
+    
+    # 智能搜索配置
+    print("\n🔍 智能搜索策略选择：")
+    config['enable_cache_search'] = input("启用缓存搜索？[y/N]: ").lower() == 'y'
+    config['enable_html_extraction'] = input("启用HTML提取？[Y/n]: ").lower() != 'n'
+    config['enable_realtime_search'] = input("启用实时搜索？[y/N]: ").lower() == 'y'
     
     # 验证严格度
     print("\n🔍 验证严格度选择：")
@@ -367,9 +404,28 @@ def check_port(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('localhost', port)) == 0
 
+def clean_dir_keep_folder(dir_path):
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+        return
+    for filename in os.listdir(dir_path):
+        file_path = os.path.join(dir_path, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+        except Exception as e:
+            print(f'无法删除 {file_path}. 原因: {e}')
+
 def main():
     """主函数"""
     try:
+        # 启动前清理
+        clean_dir_keep_folder('cache/results')
+        clean_dir_keep_folder('cache/temp')
+        clean_dir_keep_folder('debug_screenshots')
+        
         # 显示配置菜单
         mode = show_config_menu()
         config = get_config_by_mode(mode)
@@ -384,6 +440,17 @@ def main():
         import json
         os.environ['CRAWL_CONFIG'] = json.dumps(config)  # 将配置传递给爬虫
         os.environ['ENABLE_BACKEND_EXTRACTION'] = str(config.get('enable_backend_extraction', True)).lower()  # 设置后台提取开关
+        
+        # 智能搜索配置传递
+        intelligent_search_config = {
+            'enable_cache_search': config.get('enable_cache_search', False),
+            'enable_html_extraction': config.get('enable_html_extraction', True),
+            'enable_realtime_search': config.get('enable_realtime_search', False),
+            'wait_for_html_save': True,
+            'html_save_timeout': 30,
+            'extraction_timeout': 60,
+        }
+        os.environ['INTELLIGENT_SEARCH_CONFIG'] = json.dumps(intelligent_search_config)
         
         print("🔍 检查Python依赖...")
         check_dependencies()
@@ -405,9 +472,21 @@ def main():
         print("=" * 50)
         
         # 启动服务器
+        print("🚀 正在启动Flask服务器...")
+        print(f"🐍 Python执行路径: {sys.executable}")
+        
+        # 确保使用虚拟环境中的Python
+        venv_python = os.path.join(PROJECT_ROOT, 'venv', 'bin', 'python')
+        if os.path.exists(venv_python):
+            python_executable = venv_python
+            print(f"✅ 使用虚拟环境Python: {python_executable}")
+        else:
+            python_executable = sys.executable
+            print(f"⚠️  使用系统Python: {python_executable}")
+        
         os.environ["FLASK_APP"] = "src.server.main_server"
         subprocess.run([
-            sys.executable, "-m", "flask", "run", 
+            python_executable, "-m", "flask", "run", 
             "--host=0.0.0.0", f"--port={APP_CONFIG['PORT']}"
         ])
         

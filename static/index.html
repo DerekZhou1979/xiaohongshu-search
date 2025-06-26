@@ -29,12 +29,23 @@
                            id="search-input" 
                            placeholder="输入关键词，例如：老庙黄金、海鸥表、松鹤楼、AHAVA、亚一金店..."
                            autocomplete="off">
-                    <button id="search-button" type="button">
-                        <i class="fas fa-search"></i> 搜索
-                    </button>
-                    <button id="extract-button" type="button" class="extract-btn">
-                        <i class="fas fa-download"></i> 批量提取缓存
-                    </button>
+                    <div class="search-actions">
+                        <button id="search-button" type="button" class="primary-btn">
+                            <i class="fas fa-search"></i> 智能搜索
+                        </button>
+                        <div class="search-options">
+                            <label class="option-item">
+                                <input type="checkbox" id="enable-cache" checked>
+                                <span class="checkmark"></span>
+                                启用缓存
+                            </label>
+                            <label class="option-item">
+                                <input type="checkbox" id="enable-extraction" checked>
+                                <span class="checkmark"></span>
+                                深度提取
+                            </label>
+                        </div>
+                    </div>
                 </div>
                 
                 <!-- 豫园旗下产业品牌 -->

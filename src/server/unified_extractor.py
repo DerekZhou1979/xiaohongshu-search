@@ -46,16 +46,31 @@ class UnifiedExtractor:
         results = []
         
         try:
+            # 先在results目录中查找HTML文件
+            results_dir = self.cache_dir / "results"
             temp_dir = self.cache_dir / "temp"
-            if not temp_dir.exists():
-                logger.warning(f"缓存目录不存在: {temp_dir}")
+            
+            html_files = []
+            
+            # 优先从results目录查找
+            if results_dir.exists():
+                html_files.extend(list(results_dir.glob(pattern)))
+                logger.info(f"在results目录找到 {len(html_files)} 个HTML文件")
+            
+            # 然后从temp目录查找
+            if temp_dir.exists():
+                temp_files = list(temp_dir.glob(pattern))
+                html_files.extend(temp_files)
+                logger.info(f"在temp目录找到 {len(temp_files)} 个HTML文件")
+            
+            if not html_files:
+                logger.warning(f"在 {results_dir} 和 {temp_dir} 中都未找到HTML文件")
                 return []
             
-            html_files = list(temp_dir.glob(pattern))
             if max_files:
                 html_files = html_files[:max_files]
             
-            logger.info(f"找到 {len(html_files)} 个HTML文件待处理")
+            logger.info(f"总共找到 {len(html_files)} 个HTML文件待处理")
             
             for html_file in html_files:
                 logger.info(f"处理文件: {html_file.name}")
@@ -124,33 +139,49 @@ class UnifiedExtractor:
         try:
             soup = BeautifulSoup(html_content, 'html.parser')
             
-            # 查找所有explore链接
-            explore_links = soup.find_all('a', href=re.compile(r'/explore/'))
+            # 方法1: 查找带有data-note-id的note-card
+            note_cards = soup.find_all('div', class_='note-card')
             note_containers = []
             
-            for link in explore_links:
-                href = link.get('href', '')
-                note_id_match = re.search(r'/explore/([a-f0-9]{24})', href)
-                
-                if note_id_match:
-                    note_id = note_id_match.group(1)
-                    
-                    # 向上查找包含此链接的容器
-                    container = link
-                    for _ in range(5):
-                        parent = container.parent
-                        if parent:
-                            container = parent
-                            images = container.find_all('img')
-                            if images:
-                                break
-                    
+            for card in note_cards:
+                note_id = card.get('data-note-id')
+                if note_id:
                     note_containers.append({
                         'note_id': note_id,
-                        'link_href': href,
-                        'container': container,
-                        'link_element': link
+                        'link_href': f'/explore/{note_id}',
+                        'container': card,
+                        'link_element': card
                     })
+            
+            # 方法2: 如果没有找到note-card，则查找传统的explore链接
+            if not note_containers:
+                explore_links = soup.find_all('a', href=re.compile(r'/explore/'))
+                
+                for link in explore_links:
+                    href = link.get('href', '')
+                    note_id_match = re.search(r'/explore/([a-f0-9]{24})', href)
+                    
+                    if note_id_match:
+                        note_id = note_id_match.group(1)
+                        
+                        # 向上查找包含此链接的容器
+                        container = link
+                        for _ in range(5):
+                            parent = container.parent
+                            if parent:
+                                container = parent
+                                images = container.find_all('img')
+                                if images:
+                                    break
+                        
+                        note_containers.append({
+                            'note_id': note_id,
+                            'link_href': href,
+                            'container': container,
+                            'link_element': link
+                        })
+            
+            logger.info(f"找到 {len(note_containers)} 个笔记容器")
             
             # 从每个容器提取详细信息
             extracted_notes = []
@@ -172,32 +203,56 @@ class UnifiedExtractor:
                             src = 'https://www.xiaohongshu.com' + src
                         image_urls.append(src)
                 
-                # 提取文本内容
-                text_content = container.get_text(separator=' ', strip=True)
-                
                 # 提取标题
-                title = self._extract_title_from_container(container_info, text_content, i)
+                title_element = container.find('h3', class_='note-title') or container.find('.note-title')
+                title = title_element.get_text(strip=True) if title_element else self._extract_title_from_container(container_info, "", i)
+                
+                # 提取描述
+                desc_element = container.find('p', class_='note-desc') or container.find('.note-desc')
+                description = desc_element.get_text(strip=True) if desc_element else ""
                 
                 # 提取作者
-                author = self._extract_author_from_text(text_content)
+                author_element = container.find('div', class_='note-author')
+                if author_element:
+                    author_text = author_element.get_text(strip=True)
+                    # 移除@符号，保留作者名称，去除粉丝数等数字后缀
+                    author = re.sub(r'^@', '', author_text).strip()
+                    # 去除可能的粉丝数（如"1千"、"3万"等）
+                    author = re.sub(r'\s*\d+[千万kKwW]*\s*$', '', author).strip()
+                    author = author or "未知作者"
+                else:
+                    author = "未知作者"
+                
+                # 提取互动数据
+                stats = self._extract_stats_from_container(container)
+                
+                # 提取文本内容
+                text_content = container.get_text(separator=' ', strip=True)
                 
                 # 构建完整链接
                 full_link = f"https://www.xiaohongshu.com{container_info['link_href']}"
                 
                 note_data = {
                     'note_id': note_id,
-                    'title': title,
+                    'title': title or '未知标题',
+                    'desc': description or title or '暂无描述',
                     'link': full_link,
+                    'cover': image_urls[0] if image_urls else '',
                     'cover_image': image_urls[0] if image_urls else '',
                     'images': image_urls,
                     'author': author,
-                    'content': text_content[:200] + "..." if len(text_content) > 200 else text_content,
-                    'like_count': '0',
-                    'comment_count': '0',
-                    'collect_count': '0',
+                    'content': description or text_content[:200] + "..." if len(text_content) > 200 else text_content,
+                    'likes': stats.get('likes', 0),
+                    'comments': stats.get('comments', 0),
+                    'collects': stats.get('collects', 0),
+                    'like_count': stats.get('likes', 0),
+                    'comment_count': stats.get('comments', 0),
+                    'collect_count': stats.get('collects', 0),
                     'tags': ['小红书搜索'],
                     'raw_text': text_content,
-                    'method': 'precise_containers'
+                    'method': 'precise_containers',
+                    'published': '',
+                    'avatar': ''
                 }
                 
                 extracted_notes.append(note_data)
@@ -288,6 +343,42 @@ class UnifiedExtractor:
                 return author_match.group(1)
         
         return "未知作者"
+    
+    def _extract_stats_from_container(self, container) -> Dict[str, int]:
+        """从容器中提取互动统计数据"""
+        stats = {'likes': 0, 'comments': 0, 'collects': 0, 'shares': 0}
+        
+        try:
+            # 查找统计数据容器
+            stats_container = container.find('div', class_='note-stats')
+            if stats_container:
+                stat_items = stats_container.find_all('span', class_='stat-item')
+                
+                for item in stat_items:
+                    icon = item.find('i')
+                    text = item.get_text(strip=True)
+                    
+                    # 提取数字
+                    numbers = re.findall(r'\d+', text)
+                    if numbers:
+                        count = int(numbers[0])
+                        
+                        # 根据图标类型判断统计类型
+                        if icon:
+                            icon_class = icon.get('class', [])
+                            if 'fa-heart' in icon_class:
+                                stats['likes'] = count
+                            elif 'fa-comment' in icon_class:
+                                stats['comments'] = count
+                            elif 'fa-star' in icon_class:
+                                stats['collects'] = count
+                            elif 'fa-share' in icon_class:
+                                stats['shares'] = count
+                
+        except Exception as e:
+            logger.debug(f"提取统计数据失败: {e}")
+        
+        return stats
     
     def save_unified_results(self, results: List[Dict[str, Any]], keyword: str = "search") -> str:
         """保存统一格式的结果"""
